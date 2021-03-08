@@ -1,0 +1,17 @@
+[package]
+name = "tracer_render"
+version = "0.1.0"
+authors = ["Gonçalo Soares <goncalofds@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy = { git = "https://github.com/bevyengine/bevy.git" }
+glam = { version = "0.13", features = ["transform-types"] }
+ash = "0.32.1"
+ash-window = "0.6"
+vk-mem = "0.2.2"
+image = "0.23.14"
+memoffset = "0.6"
+winit = "0.24"
