@@ -11,6 +11,7 @@ use winit::window::Window;
 
 use crate::device_info::DeviceInfo;
 use crate::vk_types::vk_to_string;
+use crate::render_context::RenderContext;
 
 #[cfg(debug_assertions)]
 const ENABLE_VALIDATION_LAYERS: bool = true;
@@ -87,6 +88,10 @@ impl Renderer {
             debug_utils_loader,
             debug_callback,
         }
+    }
+
+    pub fn draw_frame(&mut self, render_context: &mut RenderContext) {
+        unsafe { render_context.draw(); }
     }
 }
 
