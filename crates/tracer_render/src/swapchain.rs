@@ -8,13 +8,13 @@ pub struct SwapchainImage {
     pub framebuffer: vk::Framebuffer,
 }
 
-pub struct SwapchainConfig {
+pub struct SwapchainDescriptor {
     pub format: vk::Format,
     pub extent: vk::Extent2D,
     pub frames_in_flight: u32,
 }
 
-impl SwapchainConfig {
+impl SwapchainDescriptor {
     pub fn new(
         physical_device: vk::PhysicalDevice,
         surface_loader: &Surface,
@@ -39,7 +39,7 @@ impl SwapchainConfig {
         let format = supported_formats[0].format;
         let extent = caps.current_extent;
 
-        SwapchainConfig {
+        SwapchainDescriptor {
             format,
             extent,
             frames_in_flight: 3,

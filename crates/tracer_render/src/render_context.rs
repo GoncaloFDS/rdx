@@ -6,9 +6,8 @@ use ash::extensions::khr::Swapchain;
 use ash::version::DeviceV1_0;
 use crevice::std430::{AsStd430, Std430};
 
-use crate::mesh::Vertex;
 use crate::renderer::{Renderer, VulkanContext};
-use crate::swapchain::{SwapchainConfig, SwapchainImage};
+use crate::swapchain::{SwapchainDescriptor, SwapchainImage};
 use crate::vk_types::AllocatedImage;
 
 #[derive(Copy, Clone, AsStd430)]
@@ -54,7 +53,7 @@ pub struct RenderContext {
     swapchain_loader: Swapchain,
     swapchain: vk::SwapchainKHR,
 
-    swapchain_config: SwapchainConfig,
+    swapchain_config: SwapchainDescriptor,
     swapchain_image_views: Vec<vk::ImageView>,
     depth_image: AllocatedImage,
     depth_image_view: vk::ImageView,
@@ -83,8 +82,7 @@ impl RenderContext {
         let allocator = create_vulkan_allocator(device, &renderer.vk_context.instance, renderer.physical_device);
         let allocator = Arc::new(allocator);
 
-
-        let swapchain_config = SwapchainConfig::new(renderer.physical_device, &renderer.surface_loader, surface);
+        let swapchain_config = SwapchainDescriptor::new(renderer.physical_device, &renderer.surface_loader, surface);
         let swapchain_loader = Swapchain::new(&renderer.vk_context.instance, device);
 
         let swapchain = create_swapchain(&swapchain_loader, surface, &swapchain_config, None);
@@ -345,8 +343,6 @@ fn create_graphics_pipeline(
         unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
     };
 
-    let vertex_input_bindings = Vertex::get_binding_descriptions();
-    let vertex_input_attributes = Vertex::get_attribute_descriptions();
     let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
     let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
@@ -389,6 +385,8 @@ fn create_graphics_pipeline(
     let dynamic_state_info =
         vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
+    let vertex_input_attributes = [];//Vertex::get_attribute_descriptions();
+    let vertex_input_bindings = [];//Vertex::get_binding_descriptions();
     let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder()
         .vertex_attribute_descriptions(&vertex_input_attributes)
         .vertex_binding_descriptions(&vertex_input_bindings);
@@ -445,7 +443,7 @@ fn create_vulkan_allocator(
 fn create_swapchain(
     swapchain_loader: &Swapchain,
     surface: vk::SurfaceKHR,
-    swapchain_config: &SwapchainConfig,
+    swapchain_config: &SwapchainDescriptor,
     old_swapchain: Option<vk::SwapchainKHR>,
 ) -> vk::SwapchainKHR {
     let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
@@ -551,7 +549,7 @@ fn create_default_render_pass(device: &Device, format: vk::Format) -> vk::Render
 fn create_swapchain_image_views(
     device: &Device,
     swapchain_images: &[vk::Image],
-    swapchain_config: &SwapchainConfig,
+    swapchain_config: &SwapchainDescriptor,
 ) -> Vec<vk::ImageView> {
     swapchain_images
         .iter()
