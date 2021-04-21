@@ -33,12 +33,12 @@ pub struct VulkanContext {
     pub entry: ash::Entry,
     pub instance: ash::Instance,
     pub device: ash::Device,
+    pub physical_device: vk::PhysicalDevice
 }
 
 pub struct Renderer {
     pub vk_context: Arc<VulkanContext>,
 
-    pub physical_device: vk::PhysicalDevice,
     pub surface_loader: Surface,
     pub surface: vk::SurfaceKHR,
 
@@ -76,10 +76,10 @@ impl Renderer {
             entry,
             instance,
             device,
+            physical_device
         };
         Renderer {
             vk_context: Arc::new(vk_context),
-            physical_device,
             surface_loader,
             surface,
             graphics_queue,

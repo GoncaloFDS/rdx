@@ -6,7 +6,6 @@ edition = "2018"
 build = "build.rs"
 
 [dependencies]
-bevy = { git = "https://github.com/bevyengine/bevy.git" }
+bevy = { version = "0.5" , deafault-features = false, features = ["bevy_winit"]}
 tracer_render = { path = "./crates/tracer_render" }
-tracer_core = { path = "./crates/tracer_core" }
 glam = { version = "0.13", features = ["transform-types"] }

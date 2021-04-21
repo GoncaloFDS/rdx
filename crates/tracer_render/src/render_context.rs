@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use ash::{Device, Instance, vk};
 use ash::extensions::khr::Swapchain;
-use ash::version::DeviceV1_0;
+use ash::version::{DeviceV1_0, InstanceV1_1};
+use bevy::utils::tracing::*;
 use crevice::std430::{AsStd430, Std430};
 
 use crate::renderer::{Renderer, VulkanContext};
@@ -79,10 +80,10 @@ impl RenderContext {
         let graphics_queue = renderer.graphics_queue;
         let vk_context = renderer.vk_context.clone();
 
-        let allocator = create_vulkan_allocator(device, &renderer.vk_context.instance, renderer.physical_device);
+        let allocator = create_vulkan_allocator(device, &renderer.vk_context.instance, renderer.vk_context.physical_device);
         let allocator = Arc::new(allocator);
 
-        let swapchain_config = SwapchainDescriptor::new(renderer.physical_device, &renderer.surface_loader, surface);
+        let swapchain_config = SwapchainDescriptor::new(renderer.vk_context.physical_device, &renderer.surface_loader, surface);
         let swapchain_loader = Swapchain::new(&renderer.vk_context.instance, device);
 
         let swapchain = create_swapchain(&swapchain_loader, surface, &swapchain_config, None);
@@ -110,6 +111,8 @@ impl RenderContext {
         };
 
         let (graphics_pipeline, pipeline_layout) = create_graphics_pipeline(device, render_pass);
+
+        let _raytracing_properties = get_physical_device_properties(&vk_context.instance, vk_context.physical_device);
 
         RenderContext {
             vk_context,
@@ -662,6 +665,11 @@ fn create_framebuffers(
         ).collect()
 }
 
+fn get_physical_device_properties(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> vk::PhysicalDeviceProperties2 {
+    let mut physical_device_properties = vk::PhysicalDeviceProperties2::default();
+    unsafe { instance.get_physical_device_properties2(physical_device, &mut physical_device_properties) }
+    physical_device_properties
+}
 
 impl Drop for RenderContext {
     fn drop(&mut self) {

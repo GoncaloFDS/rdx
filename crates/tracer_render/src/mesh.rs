@@ -476,7 +476,6 @@ pub fn resource_provider_system(
     for (i, changed_mesh_handle) in changed_meshes.iter().enumerate() {
         if let Some(mesh) = meshes.get(changed_mesh_handle) {
             if let Some(data) = mesh.get_index_buffer_bytes() {
-                debug!("mesh {} data: {:?}", i, data);
             }
         }
     }
