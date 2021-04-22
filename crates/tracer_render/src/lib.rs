@@ -5,11 +5,9 @@ use bevy::prelude::*;
 use bevy::window::{WindowCreated, WindowResized};
 use bevy::winit::WinitWindows;
 
+use crate::mesh::Mesh;
 use crate::render_context::RenderContext;
 use crate::renderer::Renderer;
-use crate::swapchain::SwapchainDescriptor;
-use crate::mesh::{Mesh, PrimitiveTopology, Indices};
-use crate::vertex_buffer_descriptor::Attribute;
 
 mod device_info;
 mod render_context;
@@ -55,8 +53,6 @@ impl Plugin for RenderPlugin {
             .add_system(world_update.system())
             .add_system(load_assets.system())
             .add_system_to_stage(CoreStage::PreUpdate, window_resize.system())
-            .add_system_to_stage(RenderStage::RenderResource,
-            mesh::resource_provider_system.system())
             .add_system_to_stage(CoreStage::Last, world_cleanup.system());
     }
 }
@@ -77,11 +73,11 @@ pub enum RenderStage {
 fn load_assets(
     mut meshes: ResMut<Assets<Mesh>>
 ) {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.set_attribute(Attribute::Position, vec![[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.0, 0.5, 0.0]]);
-    mesh.set_indices(Some(Indices::U32(vec![0, 1, 2])));
-
-    meshes.add(mesh);
+    // let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    // mesh.set_attribute(Attribute::Position, vec![[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.0, 0.5, 0.0]]);
+    // mesh.set_indices(Some(Indices::U32(vec![0, 1, 2])));
+    //
+    // meshes.add(mesh);
 }
 
 fn setup(

@@ -2,13 +2,14 @@ use std::ffi::CString;
 use std::sync::Arc;
 
 use ash::{Device, Instance, vk};
-use ash::extensions::khr::Swapchain;
-use ash::version::{DeviceV1_0, InstanceV1_1};
+use ash::extensions::khr::{AccelerationStructure, Swapchain};
+use ash::version::{DeviceV1_0, DeviceV1_2, InstanceV1_1};
 use bevy::utils::tracing::*;
 use crevice::std430::{AsStd430, Std430};
 
+use crate::mesh::{Mesh, Vertex};
 use crate::renderer::{Renderer, VulkanContext};
-use crate::swapchain::{SwapchainDescriptor, SwapchainImage};
+use crate::swapchain::SwapchainDescriptor;
 use crate::vk_types::AllocatedImage;
 
 #[derive(Copy, Clone, AsStd430)]
@@ -71,6 +72,9 @@ pub struct RenderContext {
 
     graphics_pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
+
+    acceleration_structure_loader: AccelerationStructure,
+    meshes: Vec<Mesh>,
 }
 
 impl RenderContext {
@@ -112,7 +116,13 @@ impl RenderContext {
 
         let (graphics_pipeline, pipeline_layout) = create_graphics_pipeline(device, render_pass);
 
+        let mesh = Mesh::load_from_obj("assets/models/monkey.obj", &allocator);
+        let meshes = vec![mesh];
+
         let _raytracing_properties = get_physical_device_properties(&vk_context.instance, vk_context.physical_device);
+        let acceleration_structure_loader = AccelerationStructure::new(&vk_context.instance, &vk_context.device);
+
+        let blas = create_bottom_level_acceleration_structures(device, &acceleration_structure_loader, &meshes);
 
         RenderContext {
             vk_context,
@@ -133,6 +143,8 @@ impl RenderContext {
             total_frame_count: 0,
             graphics_pipeline,
             pipeline_layout,
+            acceleration_structure_loader,
+            meshes,
         }
     }
 
@@ -174,7 +186,6 @@ impl RenderContext {
             self.swapchain_config.extent,
             swapchain_images.len(),
         );
-
     }
 
     pub unsafe fn draw(&mut self) {
@@ -300,6 +311,36 @@ impl RenderContext {
         }
 
         self.total_frame_count += 1;
+    }
+}
+
+impl Drop for RenderContext {
+    fn drop(&mut self) {
+        unsafe {
+            let device = &self.vk_context.device;
+
+            for &swapchain_image_view in self.swapchain_image_views.iter() {
+                device.destroy_image_view(swapchain_image_view, None);
+            }
+            self.depth_image.destroy(&self.allocator);
+            device.destroy_image_view(self.depth_image_view, None);
+            for &framebuffer in self.framebuffers.iter() {
+                device.destroy_framebuffer(framebuffer, None);
+            }
+
+            device.destroy_render_pass(self.render_pass, None);
+            for frame_sync in self.frame_sync.iter() {
+                device.destroy_fence(frame_sync.fence, None);
+                device.destroy_semaphore(frame_sync.image_available_semaphore, None);
+                device.destroy_semaphore(frame_sync.render_finished_semaphore, None);
+            }
+
+            device.destroy_pipeline(self.graphics_pipeline, None);
+            device.destroy_pipeline_layout(self.pipeline_layout, None);
+
+            self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+            device.destroy_command_pool(self.command_pool, None);
+        }
     }
 }
 
@@ -435,7 +476,7 @@ fn create_vulkan_allocator(
         physical_device,
         device: device.clone(),
         instance: instance.clone(),
-        flags: vk_mem::AllocatorCreateFlags::empty(),
+        flags: 0x00000020.fr,
         preferred_large_heap_block_size: 0,
         frame_in_use_count: 0,
         heap_size_limits: None,
@@ -671,32 +712,66 @@ fn get_physical_device_properties(instance: &ash::Instance, physical_device: vk:
     physical_device_properties
 }
 
-impl Drop for RenderContext {
-    fn drop(&mut self) {
-        unsafe {
-            let device = &self.vk_context.device;
+struct BlasInput {
+    pub as_geometry: Vec<vk::AccelerationStructureGeometryKHR>,
+    pub as_build_offset_info: Vec<vk::AccelerationStructureBuildRangeInfoKHR>,
+}
 
-            for &swapchain_image_view in self.swapchain_image_views.iter() {
-                device.destroy_image_view(swapchain_image_view, None);
-            }
-            self.depth_image.destroy(&self.allocator);
-            device.destroy_image_view(self.depth_image_view, None);
-            for &framebuffer in self.framebuffers.iter() {
-                device.destroy_framebuffer(framebuffer, None);
-            }
+fn mesh_to_vk(device: &Device, mesh: &Mesh) -> BlasInput {
+    let vertex_address_info = vk::BufferDeviceAddressInfo::builder().buffer(mesh.vertex_buffer.buffer);
+    let vertex_address = unsafe { device.get_buffer_device_address(&vertex_address_info) };
+    let index_address_info = vk::BufferDeviceAddressInfo::builder().buffer(mesh.index_buffer.buffer);
+    let index_address = unsafe { device.get_buffer_device_address(&index_address_info) };
 
-            device.destroy_render_pass(self.render_pass, None);
-            for frame_sync in self.frame_sync.iter() {
-                device.destroy_fence(frame_sync.fence, None);
-                device.destroy_semaphore(frame_sync.image_available_semaphore, None);
-                device.destroy_semaphore(frame_sync.render_finished_semaphore, None);
-            }
+    let max_primitive_count = mesh.index_count() / 3;
 
-            device.destroy_pipeline(self.graphics_pipeline, None);
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
+    let triangles = vk::AccelerationStructureGeometryTrianglesDataKHR::builder()
+        .vertex_format(vk::Format::R32G32B32_SFLOAT) // vec3 vertex position data
+        .vertex_data(vk::DeviceOrHostAddressConstKHR { device_address: vertex_address })
+        .vertex_stride(Vertex::stride())
+        .index_type(vk::IndexType::UINT32)
+        .index_data(vk::DeviceOrHostAddressConstKHR { device_address: index_address })
+        // .transform_data()
+        .max_vertex(mesh.vertex_count())
+        .build();
 
-            self.swapchain_loader.destroy_swapchain(self.swapchain, None);
-            device.destroy_command_pool(self.command_pool, None);
-        }
+    let as_geometry = vk::AccelerationStructureGeometryKHR::builder()
+        .geometry_type(vk::GeometryTypeKHR::TRIANGLES)
+        .geometry(vk::AccelerationStructureGeometryDataKHR { triangles })
+        .build();
+
+    let offset = vk::AccelerationStructureBuildRangeInfoKHR::builder()
+        .first_vertex(0)
+        .primitive_count(max_primitive_count)
+        .primitive_offset(0)
+        .transform_offset(0)
+        .build();
+
+    BlasInput {
+        as_geometry: vec![as_geometry],
+        as_build_offset_info: vec![offset],
     }
+}
+
+fn create_bottom_level_acceleration_structures(device: &Device, acceleration_structure_loader: &AccelerationStructure, meshes: &[Mesh]) {
+    let blas_input = meshes.iter().map(|mesh|
+        mesh_to_vk(device, mesh)
+    ).collect::<Vec<_>>();
+
+    let build_infos = blas_input.iter().map(|input| {
+        vk::AccelerationStructureBuildGeometryInfoKHR::builder()
+            .flags(vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE)
+            .geometries(input.as_geometry.as_slice())
+            // .geometries_ptrs(input.as_geometry.)
+            .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
+            .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
+            .src_acceleration_structure(vk::AccelerationStructureKHR::null())
+            .build()
+    }).collect::<Vec<_>>();
+
+    let max_primitive_counts = blas_input.iter().map(|input| {
+        input.as_build_offset_info.iter().map(|info| info.primitive_count).max().unwrap()
+    }).max().unwrap();
+
+    // acceleration_structure_loader.get_acceleration_structure_build_sizes()
 }

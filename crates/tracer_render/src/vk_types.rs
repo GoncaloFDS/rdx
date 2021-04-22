@@ -74,3 +74,12 @@ impl AllocatedImage {
             .expect("failed to deallocate image");
     }
 }
+
+pub struct AllocatedAcceleration {
+    pub acceleration: vk::AccelerationStructureKHR,
+    pub allocated_buffer: AllocatedBuffer,
+}
+
+impl AllocatedAcceleration {
+}
+

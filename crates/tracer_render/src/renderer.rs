@@ -1,17 +1,18 @@
 use std::collections::HashSet;
-use std::ffi::{CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::sync::Arc;
 
+use ash::{Device, Entry, Instance, vk};
 use ash::extensions::ext::DebugUtils;
-use ash::extensions::khr::{Surface, Swapchain};
+use ash::extensions::khr::{AccelerationStructure, DeferredHostOperations, RayTracingPipeline, Surface, Swapchain};
 use ash::version::{DeviceV1_0, EntryV1_0, InstanceV1_0};
-use ash::{vk, Device, Entry, Instance};
+use ash::vk::{BufferDeviceAddressInfo, BufferDeviceAddressInfoKHR, ExtBufferDeviceAddressFn, KhrBufferDeviceAddressFn, KhrDedicatedAllocationFn, KhrGetMemoryRequirements2Fn, KhrMaintenance3Fn, KhrPipelineLibraryFn, PhysicalDeviceBufferDeviceAddressFeatures, PhysicalDeviceBufferDeviceAddressFeaturesEXT, PhysicalDeviceBufferDeviceAddressFeaturesKHR, PhysicalDeviceFeatures};
 use bevy::log::*;
 use winit::window::Window;
 
 use crate::device_info::DeviceInfo;
-use crate::vk_types::vk_to_string;
 use crate::render_context::RenderContext;
+use crate::vk_types::vk_to_string;
 
 #[cfg(debug_assertions)]
 const ENABLE_VALIDATION_LAYERS: bool = true;
@@ -25,15 +26,13 @@ const VALIDATION: &[&str] = &[];
 
 const DEVICE_EXTENSIONS: &[&str] = &[
     "VK_KHR_swapchain",
-    "VK_KHR_acceleration_structure",
-    "VK_KHR_ray_tracing_pipeline",
 ];
 
 pub struct VulkanContext {
     pub entry: ash::Entry,
     pub instance: ash::Instance,
     pub device: ash::Device,
-    pub physical_device: vk::PhysicalDevice
+    pub physical_device: vk::PhysicalDevice,
 }
 
 pub struct Renderer {
@@ -59,7 +58,7 @@ impl Renderer {
         let instance = create_vulkan_instance("tracer", &window, &entry);
 
         #[cfg(debug_assertions)]
-        let (debug_utils_loader, debug_callback) = create_debug_messenger(&entry, &instance);
+            let (debug_utils_loader, debug_callback) = create_debug_messenger(&entry, &instance);
 
         let surface_loader = Surface::new(&entry, &instance);
         let surface =
@@ -76,7 +75,7 @@ impl Renderer {
             entry,
             instance,
             device,
-            physical_device
+            physical_device,
         };
         Renderer {
             vk_context: Arc::new(vk_context),
@@ -289,11 +288,25 @@ fn create_logical_device(
         queue_create_infos.push(queue_create_info);
     }
 
-    let enabled_extension_names = [Swapchain::name().as_ptr()];
+    let enabled_extension_names = [
+        Swapchain::name().as_ptr(),
+        KhrDedicatedAllocationFn::name().as_ptr(),
+        KhrGetMemoryRequirements2Fn::name().as_ptr(),
+        AccelerationStructure::name().as_ptr(),
+        RayTracingPipeline::name().as_ptr(),
+        KhrMaintenance3Fn::name().as_ptr(),
+        KhrPipelineLibraryFn::name().as_ptr(),
+        DeferredHostOperations::name().as_ptr(),
+    ];
+
+    let mut features = vk::PhysicalDeviceVulkan12Features::builder()
+        .buffer_device_address(true);
 
     let device_create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(queue_create_infos.as_slice())
-        .enabled_extension_names(&enabled_extension_names);
+        .enabled_extension_names(&enabled_extension_names)
+        .push_next(&mut features);
+
 
     unsafe {
         instance
@@ -307,11 +320,11 @@ impl Drop for Renderer {
         unsafe {
             self.surface_loader.destroy_surface(self.surface, None);
             self.vk_context.device.destroy_device(None);
-            
+
             #[cfg(debug_assertions)]
-            self.debug_utils_loader
+                self.debug_utils_loader
                 .destroy_debug_utils_messenger(self.debug_callback, None);
-            
+
             self.vk_context.instance.destroy_instance(None);
         }
     }
