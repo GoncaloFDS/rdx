@@ -23,10 +23,5 @@ fn main() {
         .add_plugin(bevy::asset::AssetPlugin::default())
         .add_plugin(bevy::scene::ScenePlugin::default())
         .add_plugin(tracer_render::RenderPlugin::default())
-        .add_startup_system(setup.system())
         .run()
-}
-
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn_scene(asset_server.load("models/FlightHelmet/FlightHelmet.gltf#Scene0"));
 }
