@@ -1,13 +1,17 @@
 use bevy::app::AppExit;
-use bevy::asset::AssetStage;
 use bevy::prelude::*;
 use bevy::window::{WindowCreated, WindowResized};
 use bevy::winit::WinitWindows;
 
 use crate::renderer::Renderer;
-use erupt::DefaultEntryLoader;
 
+mod blas;
+mod buffer_resource;
+mod commands;
+mod raytracing;
+mod raytracing_builder;
 mod renderer;
+mod vertex;
 
 #[derive(Default)]
 pub struct RenderPlugin;
@@ -33,6 +37,8 @@ fn setup(
 
     let winit_window = winit_windows.get_window(window_id).unwrap();
     let mut renderer = Renderer::new(winit_window);
+
+    renderer.init();
 
     commands.insert_resource(renderer);
 }

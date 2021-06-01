@@ -15,8 +15,7 @@ serde = { version = "1.0", features = ["derive"] }
 tobj = "2.0.4"
 
 # Graphics
-erupt = { git = "https://gitlab.com/Friz64/erupt" }
-#erupt = "0.18.0+174"
+erupt = "0.18.0+174"
 gpu-alloc-erupt = "0.4"
 gpu-alloc = "0.4"
 
@@ -26,3 +25,4 @@ winit = "0.24.0"
 # Tracing
 tracing = "0.1"
 
+memoffset = "0.6"

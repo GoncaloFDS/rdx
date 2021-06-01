@@ -1,18 +1,21 @@
-use std::os::raw::c_char;
-
-use erupt::utils::{self, surface};
-use erupt::{cstr, vk, DefaultEntryLoader, DeviceLoader, EntryLoader, InstanceLoader};
-use winit::window::Window;
-
+use crate::commands::CommandPool;
+use crate::raytracing::RaytracingContext;
+use erupt::utils::surface;
+use erupt::vk1_0::{DeviceMemory, PhysicalDevice};
+use erupt::{
+    cstr, vk, DefaultEntryLoader, DeviceLoader, EntryLoader, ExtendableFrom, InstanceLoader,
+};
+use gpu_alloc::GpuAllocator;
 use std::ffi::{c_void, CStr, CString};
-use std::process::Command;
-use std::thread;
+use std::os::raw::c_char;
+use std::sync::{Arc, Mutex};
+use winit::window::Window;
 
 const VALIDATION_LAYER: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
 const FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct PresentationSettings {
-    queue_family: u32,
+    queue_index: u32,
     surface_format: vk::SurfaceFormatKHR,
     present_mode: vk::PresentModeKHR,
     device_properties: vk::PhysicalDeviceProperties,
@@ -20,18 +23,13 @@ pub struct PresentationSettings {
 }
 
 pub struct Renderer {
-    device: DeviceLoader,
-    instance: InstanceLoader,
-    entry: DefaultEntryLoader,
-
-    debug_messenger: vk::DebugUtilsMessengerEXT,
     physical_device: vk::PhysicalDevice,
 
     surface: vk::SurfaceKHR,
 
     queue: vk::Queue,
 
-    command_pool: vk::CommandPool,
+    command_pool: CommandPool,
     command_buffers: Vec<vk::CommandBuffer>,
 
     render_pass: vk::RenderPass,
@@ -49,6 +47,13 @@ pub struct Renderer {
     image_available_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphores: Vec<vk::Semaphore>,
     fences: Vec<vk::Fence>,
+
+    debug_messenger: vk::DebugUtilsMessengerEXT,
+    allocator: Arc<Mutex<GpuAllocator<vk::DeviceMemory>>>,
+    raytracing_context: RaytracingContext,
+    device: Arc<DeviceLoader>,
+    instance: InstanceLoader,
+    entry: DefaultEntryLoader,
 }
 
 impl Renderer {
@@ -78,9 +83,15 @@ impl Renderer {
         let (device, queue) = Renderer::create_logical_device(
             &instance,
             &physical_device,
-            presentation_settings.queue_family,
+            presentation_settings.queue_index,
             &device_extensions,
         );
+        let device = Arc::new(device);
+
+        let allocator = Arc::new(Mutex::new(Renderer::create_gpu_allocator(
+            &instance,
+            physical_device,
+        )));
 
         let swapchain = Renderer::create_swapchain(&device, surface, &presentation_settings);
 
@@ -99,23 +110,29 @@ impl Renderer {
             presentation_settings.surface_capabilities.current_extent,
         );
 
-        let command_pool =
-            Renderer::create_command_pool(&device, presentation_settings.queue_family);
+        let command_pool = CommandPool::new(
+            device.clone(),
+            queue,
+            presentation_settings.queue_index,
+            vk::CommandPoolCreateFlags::TRANSIENT,
+        );
 
-        let command_buffers = Renderer::create_command_buffers(
-            &device,
-            command_pool,
+        let command_buffers = command_pool.create_command_buffers(
+            vk::CommandBufferLevel::PRIMARY,
             swapchain_framebuffers.len() as u32,
         );
 
         let (image_available_semaphores, render_finished_semaphores, fences) =
             Renderer::create_sync_objects(&device);
 
+        let raytracing_context = RaytracingContext::new(
+            device.clone(),
+            allocator.clone(),
+            presentation_settings.queue_index,
+            queue,
+        );
+
         Renderer {
-            device,
-            instance,
-            entry,
-            debug_messenger,
             physical_device,
             surface,
             queue,
@@ -132,12 +149,17 @@ impl Renderer {
             image_available_semaphores,
             render_finished_semaphores,
             fences,
+            debug_messenger,
+            allocator,
+            raytracing_context,
+            device,
+            instance,
+            entry,
         }
     }
 
     fn create_instance<T>(window: &Window, entry: &EntryLoader<T>) -> InstanceLoader {
-        let app_info =
-            vk::ApplicationInfoBuilder::new().api_version(vk::make_api_version(1, 2, 0, 0));
+        let app_info = vk::ApplicationInfoBuilder::new().api_version(vk::make_version(1, 2, 0));
 
         let mut instance_extensions = surface::enumerate_required_extensions(window).unwrap();
         if cfg!(debug_assertions) {
@@ -209,7 +231,8 @@ impl Renderer {
                 )
                 .pfn_user_callback(Some(debug_callback));
 
-            unsafe { instance.create_debug_utils_messenger_ext(&messenger_info, None) }.unwrap()
+            unsafe { instance.create_debug_utils_messenger_ext(&messenger_info, None, None) }
+                .unwrap()
         } else {
             Default::default()
         }
@@ -238,6 +261,7 @@ impl Renderer {
                                     physical_device,
                                     i as u32,
                                     surface,
+                                    None,
                                 )
                                 .unwrap()
                     }) {
@@ -283,14 +307,34 @@ impl Renderer {
                     return None;
                 }
 
-                let device_properties = instance.get_physical_device_properties(physical_device);
+                let mut accel_properties =
+                    vk::PhysicalDeviceAccelerationStructurePropertiesKHRBuilder::new().build();
+                let mut raytracing_properties =
+                    vk::PhysicalDeviceRayTracingPipelinePropertiesKHRBuilder::new().build();
+                let mut properties2 = vk::PhysicalDeviceProperties2Builder::new()
+                    .extend_from(&mut accel_properties)
+                    .extend_from(&mut raytracing_properties);
+
+                let device_properties2 =
+                    instance.get_physical_device_properties2(physical_device, Some(*properties2));
+                let device_properties = device_properties2.properties;
+
+                tracing::info!("ray tracing properties");
+                tracing::info!(
+                    " max_geometry_count: {}",
+                    accel_properties.max_geometry_count
+                );
+                tracing::info!(
+                    " shder_group_handle_size: {}",
+                    raytracing_properties.shader_group_handle_size
+                );
 
                 let surface_capabilities = instance
-                    .get_physical_device_surface_capabilities_khr(physical_device, surface)
+                    .get_physical_device_surface_capabilities_khr(physical_device, surface, None)
                     .unwrap();
 
                 let presentation_settings = PresentationSettings {
-                    queue_family,
+                    queue_index: queue_family,
                     surface_format,
                     present_mode,
                     device_properties,
@@ -312,11 +356,11 @@ impl Renderer {
     fn create_logical_device(
         instance: &InstanceLoader,
         physical_device: &vk::PhysicalDevice,
-        queue_family: u32,
+        queue_index: u32,
         device_extensions: &[*const i8],
     ) -> (DeviceLoader, vk::Queue) {
         let queue_info = [vk::DeviceQueueCreateInfoBuilder::new()
-            .queue_family_index(queue_family)
+            .queue_family_index(queue_index)
             .queue_priorities(&[1.0])];
         let features = vk::PhysicalDeviceFeaturesBuilder::new();
 
@@ -326,16 +370,45 @@ impl Renderer {
             device_layers.push(VALIDATION_LAYER)
         }
 
+        let mut buffer_device_address_features =
+            vk::PhysicalDeviceBufferDeviceAddressFeaturesBuilder::new().buffer_device_address(true);
+        let mut indexing_features = vk::PhysicalDeviceDescriptorIndexingFeaturesBuilder::new()
+            .runtime_descriptor_array(true);
+        let mut reset_query_features =
+            vk::PhysicalDeviceHostQueryResetFeaturesBuilder::new().host_query_reset(true);
+        let mut acceleration_structure_features =
+            vk::PhysicalDeviceAccelerationStructureFeaturesKHRBuilder::new()
+                .acceleration_structure(true);
+        let mut ray_tracing_features =
+            vk::PhysicalDeviceRayTracingPipelineFeaturesKHRBuilder::new()
+                .ray_tracing_pipeline(true);
+
         let device_info = vk::DeviceCreateInfoBuilder::new()
             .queue_create_infos(&queue_info)
             .enabled_features(&features)
             .enabled_extension_names(&device_extensions)
-            .enabled_layer_names(&device_layers);
+            .enabled_layer_names(&device_layers)
+            .extend_from(&mut buffer_device_address_features)
+            .extend_from(&mut indexing_features)
+            .extend_from(&mut reset_query_features)
+            .extend_from(&mut acceleration_structure_features)
+            .extend_from(&mut ray_tracing_features);
 
         let device =
             unsafe { DeviceLoader::new(instance, *physical_device, &device_info, None).unwrap() };
-        let queue = unsafe { device.get_device_queue(queue_family, 0) };
+        let queue = unsafe { device.get_device_queue(queue_index, 0, None) };
         (device, queue)
+    }
+
+    fn create_gpu_allocator(
+        instance: &InstanceLoader,
+        physical_device: PhysicalDevice,
+    ) -> GpuAllocator<DeviceMemory> {
+        let config = gpu_alloc::Config::i_am_prototyping();
+        let properties =
+            unsafe { gpu_alloc_erupt::device_properties(&instance, physical_device).unwrap() };
+
+        GpuAllocator::new(config, properties)
     }
 
     fn create_swapchain(
@@ -364,7 +437,7 @@ impl Renderer {
             .clipped(true)
             .old_swapchain(vk::SwapchainKHR::null());
 
-        unsafe { device.create_swapchain_khr(&swapchain_info, None) }.unwrap()
+        unsafe { device.create_swapchain_khr(&swapchain_info, None, None) }.unwrap()
     }
 
     fn get_swapchain_images(
@@ -396,7 +469,7 @@ impl Renderer {
                             .layer_count(1)
                             .build(),
                     );
-                unsafe { device.create_image_view(&image_view_info, None) }.unwrap()
+                unsafe { device.create_image_view(&image_view_info, None, None) }.unwrap()
             })
             .collect();
 
@@ -411,7 +484,7 @@ impl Renderer {
         shader_file.read_to_end(&mut bytes).unwrap();
         let spv = erupt::utils::decode_spv(&bytes).unwrap();
         let module_info = vk::ShaderModuleCreateInfoBuilder::new().code(&spv);
-        unsafe { device.create_shader_module(&module_info, None) }.unwrap()
+        unsafe { device.create_shader_module(&module_info, None, None) }.unwrap()
     }
 
     fn create_default_render_pass(
@@ -446,7 +519,7 @@ impl Renderer {
             .attachments(&attachments)
             .subpasses(&subpasses)
             .dependencies(&dependencies);
-        unsafe { device.create_render_pass(&render_pass_info, None) }.unwrap()
+        unsafe { device.create_render_pass(&render_pass_info, None, None) }.unwrap()
     }
 
     fn create_graphics_pipeline(
@@ -517,7 +590,7 @@ impl Renderer {
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfoBuilder::new();
         let pipeline_layout =
-            unsafe { device.create_pipeline_layout(&pipeline_layout_info, None) }.unwrap();
+            unsafe { device.create_pipeline_layout(&pipeline_layout_info, None, None) }.unwrap();
 
         let pipeline_info = vk::GraphicsPipelineCreateInfoBuilder::new()
             .stages(&shader_stages)
@@ -557,15 +630,9 @@ impl Renderer {
                     .height(extent.height)
                     .layers(1);
 
-                unsafe { device.create_framebuffer(&framebuffer_info, None) }.unwrap()
+                unsafe { device.create_framebuffer(&framebuffer_info, None, None) }.unwrap()
             })
             .collect()
-    }
-
-    fn create_command_pool(device: &DeviceLoader, queue_family: u32) -> vk::CommandPool {
-        let command_pool_info =
-            vk::CommandPoolCreateInfoBuilder::new().queue_family_index(queue_family);
-        unsafe { device.create_command_pool(&command_pool_info, None) }.unwrap()
     }
 
     fn create_command_buffers(
@@ -585,15 +652,15 @@ impl Renderer {
     ) -> (Vec<vk::Semaphore>, Vec<vk::Semaphore>, Vec<vk::Fence>) {
         let semaphore_info = vk::SemaphoreCreateInfoBuilder::new();
         let image_available_semaphores: Vec<_> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
+            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None, None) }.unwrap())
             .collect();
         let render_finished_semaphores: Vec<_> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
+            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None, None) }.unwrap())
             .collect();
 
         let fence_info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
         let in_flight_fences: Vec<_> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| unsafe { device.create_fence(&fence_info, None) }.unwrap())
+            .map(|_| unsafe { device.create_fence(&fence_info, None, None) }.unwrap())
             .collect();
 
         (
@@ -601,6 +668,10 @@ impl Renderer {
             render_finished_semaphores,
             in_flight_fences,
         )
+    }
+
+    pub fn init(&mut self) {
+        self.raytracing_context.create_acceleration_structures();
     }
 }
 
@@ -621,8 +692,7 @@ impl Drop for Renderer {
                 self.device.destroy_fence(Some(fence), None);
             }
 
-            self.device
-                .destroy_command_pool(Some(self.command_pool), None);
+            self.command_pool.destroy();
 
             for &framebuffer in &self.swapchain_framebuffers {
                 self.device.destroy_framebuffer(Some(framebuffer), None);
