@@ -5,7 +5,6 @@ use bevy::winit::WinitWindows;
 
 use crate::renderer::Renderer;
 
-mod blas;
 mod buffer_resource;
 mod commands;
 mod raytracing;

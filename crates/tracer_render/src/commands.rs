@@ -37,16 +37,14 @@ impl CommandPool {
         level: vk::CommandBufferLevel,
         count: u32,
     ) -> Vec<vk::CommandBuffer> {
+        let cmd_buf_allocate_info = vk::CommandBufferAllocateInfoBuilder::new()
+            .command_pool(self.pool)
+            .level(level)
+            .command_buffer_count(count);
         unsafe {
-            let cmd_buf_allocate_info = vk::CommandBufferAllocateInfoBuilder::new()
-                .command_pool(self.pool)
-                .level(level)
-                .command_buffer_count(count);
-            unsafe {
-                self.device
-                    .allocate_command_buffers(&cmd_buf_allocate_info)
-                    .unwrap()
-            }
+            self.device
+                .allocate_command_buffers(&cmd_buf_allocate_info)
+                .unwrap()
         }
     }
 

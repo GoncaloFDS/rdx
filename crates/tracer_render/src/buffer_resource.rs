@@ -34,7 +34,7 @@ impl BufferResource {
 
         let mem_requirements = unsafe { device.get_buffer_memory_requirements(buffer, None) };
 
-        let mut allocation = unsafe {
+        let allocation = unsafe {
             allocator.lock().unwrap().alloc(
                 EruptMemoryDevice::wrap(&device),
                 Request {

@@ -181,7 +181,7 @@ impl Renderer {
             .enabled_extension_names(&instance_extensions)
             .enabled_layer_names(&instance_layers);
 
-        unsafe { InstanceLoader::new(&entry, &instance_info, None) }.unwrap()
+        InstanceLoader::new(&entry, &instance_info, None).unwrap()
     }
 
     fn create_debug_messenger(instance: &InstanceLoader) -> vk::DebugUtilsMessengerEXT {
@@ -311,7 +311,7 @@ impl Renderer {
                     vk::PhysicalDeviceAccelerationStructurePropertiesKHRBuilder::new().build();
                 let mut raytracing_properties =
                     vk::PhysicalDeviceRayTracingPipelinePropertiesKHRBuilder::new().build();
-                let mut properties2 = vk::PhysicalDeviceProperties2Builder::new()
+                let properties2 = vk::PhysicalDeviceProperties2Builder::new()
                     .extend_from(&mut accel_properties)
                     .extend_from(&mut raytracing_properties);
 
@@ -394,8 +394,7 @@ impl Renderer {
             .extend_from(&mut acceleration_structure_features)
             .extend_from(&mut ray_tracing_features);
 
-        let device =
-            unsafe { DeviceLoader::new(instance, *physical_device, &device_info, None).unwrap() };
+        let device = DeviceLoader::new(instance, *physical_device, &device_info, None).unwrap();
         let queue = unsafe { device.get_device_queue(queue_index, 0, None) };
         (device, queue)
     }
@@ -635,18 +634,6 @@ impl Renderer {
             .collect()
     }
 
-    fn create_command_buffers(
-        device: &DeviceLoader,
-        command_pool: vk::CommandPool,
-        count: u32,
-    ) -> Vec<vk::CommandBuffer> {
-        let cmd_buf_allocate_info = vk::CommandBufferAllocateInfoBuilder::new()
-            .command_pool(command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(count);
-        unsafe { device.allocate_command_buffers(&cmd_buf_allocate_info) }.unwrap()
-    }
-
     fn create_sync_objects(
         device: &DeviceLoader,
     ) -> (Vec<vk::Semaphore>, Vec<vk::Semaphore>, Vec<vk::Fence>) {
@@ -671,7 +658,8 @@ impl Renderer {
     }
 
     pub fn init(&mut self) {
-        self.raytracing_context.create_acceleration_structures();
+        self.raytracing_context.create_bottom_level_as();
+        self.raytracing_context.create_top_level_as();
     }
 }
 
@@ -713,6 +701,8 @@ impl Drop for Renderer {
 
             self.device
                 .destroy_swapchain_khr(Some(self.swapchain), None);
+
+            self.raytracing_context.destroy();
 
             self.device.destroy_device(None);
 

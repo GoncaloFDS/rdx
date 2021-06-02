@@ -1,5 +1,5 @@
 use crate::buffer_resource::BufferResource;
-use crate::raytracing_builder::{BlasInput, RaytracingBuilder};
+use crate::raytracing_builder::{AccelerationStructureInstance, BlasInput, RaytracingBuilder};
 use crate::vertex::Vertex;
 use erupt::{vk, DeviceLoader};
 use glam::vec3;
@@ -32,7 +32,7 @@ impl RaytracingContext {
         }
     }
 
-    pub fn create_acceleration_structures(&mut self) {
+    pub fn create_bottom_level_as(&mut self) {
         let vertices = [
             Vertex {
                 position: vec3(-0.5, -0.5, 0.0),
@@ -78,7 +78,33 @@ impl RaytracingContext {
 
         self.raytracing_builder.build_blas(
             all_blas,
-            vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_BUILD_KHR, // | vk::BuildAccelerationStructureFlagsKHR::ALLOW_COMPACTION_KHR,
+            vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_BUILD_KHR
+                | vk::BuildAccelerationStructureFlagsKHR::ALLOW_COMPACTION_KHR,
         );
+    }
+
+    pub fn create_top_level_as(&mut self) {
+        let mut instances = vec![];
+
+        let instance = AccelerationStructureInstance {
+            blas_id: 0,
+            instance_custom_id: 0,
+            hit_group_id: 0,
+            visibility_mask: 0,
+            flags: vk::GeometryInstanceFlagsKHR::TRIANGLE_FACING_CULL_DISABLE_KHR,
+            transform: Default::default(),
+        };
+
+        instances.push(instance);
+
+        self.raytracing_builder.build_tlas(
+            instances,
+            vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE_KHR,
+            false,
+        )
+    }
+
+    pub fn destroy(&mut self) {
+        self.raytracing_builder.destroy();
     }
 }
