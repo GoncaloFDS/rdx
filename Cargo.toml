@@ -8,4 +8,4 @@ build = "build.rs"
 [dependencies]
 bevy = { version = "0.5" , default-features = false, features = ["bevy_winit"]}
 tracer_render = { path = "./crates/tracer_render" }
-glam = { version = "0.13", features = ["transform-types"] }
+glam = { version = "0.16", features = ["transform-types"] }

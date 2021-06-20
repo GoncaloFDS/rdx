@@ -107,3 +107,10 @@ impl Drop for BufferResource {
         }
     }
 }
+
+#[derive(Default)]
+pub struct Texture {
+    pub image: vk::Image,
+    pub allocation: Option<MemoryBlock<vk::DeviceMemory>>,
+    pub descriptor: vk::DescriptorImageInfo,
+}

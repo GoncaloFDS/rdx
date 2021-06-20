@@ -658,8 +658,10 @@ impl Renderer {
     }
 
     pub fn init(&mut self) {
+        self.raytracing_context.create_offscreen_render();
         self.raytracing_context.create_bottom_level_as();
         self.raytracing_context.create_top_level_as();
+        self.raytracing_context.create_descriptor_set();
     }
 }
 

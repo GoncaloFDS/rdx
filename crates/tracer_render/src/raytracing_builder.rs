@@ -34,12 +34,16 @@ impl RaytracingBuilder {
         }
     }
 
+    pub fn get_acceleration_structure(&self) -> vk::AccelerationStructureKHR {
+        self.tlas.acceleration_structure.as_ref().unwrap().accel
+    }
+
     pub fn build_blas(
         &mut self,
         inputs: Vec<BlasInput>,
         flags: vk::BuildAccelerationStructureFlagsKHR,
     ) {
-        assert!(self.blas_container.is_empty());
+        debug_assert!(self.blas_container.is_empty());
 
         for input in inputs {
             self.blas_container.push(BlasEntry::new(input));
@@ -60,6 +64,7 @@ impl RaytracingBuilder {
                     .geometries(&geometries)
                     .mode(vk::BuildAccelerationStructureModeKHR::BUILD_KHR)
                     ._type(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL_KHR)
+                    .src_acceleration_structure(vk::AccelerationStructureKHR::null())
                     .build()
             })
             .collect();
@@ -168,6 +173,8 @@ impl RaytracingBuilder {
                 .map(|offset| offset as *const vk::AccelerationStructureBuildRangeInfoKHR)
                 .collect();
 
+            tracing::info!("cmd build AS info {:#?}", build_infos);
+
             unsafe {
                 self.device.cmd_build_acceleration_structures_khr(
                     command_buffers[i],
@@ -204,7 +211,7 @@ impl RaytracingBuilder {
         flags: vk::BuildAccelerationStructureFlagsKHR,
         update: bool,
     ) {
-        assert!(self.tlas.acceleration_structure.is_none() || update);
+        debug_assert!(self.tlas.acceleration_structure.is_none() || update);
         let command_pool = CommandPool::new(
             self.device.clone(),
             self.queue,
@@ -355,6 +362,8 @@ impl RaytracingBuilder {
             .transform_offset(0)
             .build();
 
+        tracing::info!("cmd build AS info {:#?}", build_info);
+
         unsafe {
             self.device.cmd_build_acceleration_structures_khr(
                 command_buffer,
@@ -371,7 +380,7 @@ impl RaytracingBuilder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlasInput {
     pub as_geometry: Vec<vk::AccelerationStructureGeometryKHR>,
     pub as_build_offset_info: Vec<vk::AccelerationStructureBuildRangeInfoKHR>,
