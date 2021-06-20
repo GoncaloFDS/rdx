@@ -37,6 +37,11 @@ pub struct RaytracingContext {
     shader_groups: Vec<vk::RayTracingShaderGroupCreateInfoKHR>,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
+
+    sbt_buffer: BufferResource,
+
+    vertex_buffer: BufferResource,
+    index_buffer: BufferResource,
 }
 
 impl RaytracingContext {
@@ -62,6 +67,9 @@ impl RaytracingContext {
             shader_groups: vec![],
             pipeline_layout: Default::default(),
             pipeline: Default::default(),
+            sbt_buffer: Default::default(),
+            vertex_buffer: Default::default(),
+            index_buffer: Default::default(),
         }
     }
 
@@ -169,32 +177,34 @@ impl RaytracingContext {
         let vertex_count = vertices.len();
         let vertex_stride = std::mem::size_of::<Vertex>();
         let vertex_buffer_size = vertex_stride * vertex_count;
-        let mut vertex_buffer = BufferResource::new(
+        self.vertex_buffer = BufferResource::new(
             self.device.clone(),
             self.allocator.clone(),
             vertex_buffer_size as u64,
             vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::DEVICE_ADDRESS | UsageFlags::HOST_ACCESS,
+            "vertex",
         );
-        vertex_buffer.store(&vertices);
+        self.vertex_buffer.store(&self.device, &vertices);
 
         let indices = [0u16, 1, 2];
         let index_count = indices.len();
         let index_buffer_size = std::mem::size_of::<u16>() * index_count;
-        let mut index_buffer = BufferResource::new(
+        self.index_buffer = BufferResource::new(
             self.device.clone(),
             self.allocator.clone(),
             index_buffer_size as u64,
             vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::DEVICE_ADDRESS | UsageFlags::HOST_ACCESS,
+            "index",
         );
-        index_buffer.store(&indices);
+        self.index_buffer.store(&self.device, &indices);
 
         let all_blas = vec![BlasInput::new(
             &vertices,
-            &vertex_buffer,
+            &self.vertex_buffer,
             &indices,
-            &index_buffer,
+            &self.index_buffer,
         )];
 
         self.raytracing_builder.build_blas(
@@ -379,6 +389,8 @@ impl RaytracingContext {
             unsafe { self.device.destroy_shader_module(Some(stage.module), None) }
         }
     }
+
+    pub fn create_shader_binding_table(&mut self) {}
 
     pub fn destroy(&mut self) {
         self.raytracing_builder.destroy();

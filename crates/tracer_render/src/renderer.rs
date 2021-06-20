@@ -652,6 +652,7 @@ impl Renderer {
         self.raytracing_context.create_top_level_as();
         self.raytracing_context.create_descriptor_set();
         self.raytracing_context.create_raytracing_pipeline();
+        self.raytracing_context.create_shader_binding_table();
     }
 }
 

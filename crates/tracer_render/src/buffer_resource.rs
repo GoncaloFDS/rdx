@@ -4,12 +4,12 @@ use gpu_alloc::{GpuAllocator, MemoryBlock, Request, UsageFlags};
 use gpu_alloc_erupt::EruptMemoryDevice;
 use std::sync::{Arc, Mutex};
 
+#[derive(Default)]
 pub struct BufferResource {
     pub buffer: vk::Buffer,
     pub allocation: Option<MemoryBlock<vk::DeviceMemory>>,
-
-    device: Arc<DeviceLoader>,
-    allocator: Arc<Mutex<GpuAllocator<vk::DeviceMemory>>>,
+    pub device_address: vk::DeviceAddress,
+    name: String,
 }
 
 impl BufferResource {
@@ -19,6 +19,7 @@ impl BufferResource {
         buffer_size: vk::DeviceSize,
         usage_flags: vk::BufferUsageFlags,
         memory_usage: UsageFlags,
+        name: &str,
     ) -> Self {
         let buffer = unsafe {
             device.create_buffer(
@@ -53,20 +54,28 @@ impl BufferResource {
                 .unwrap()
         }
 
+        let device_address = unsafe {
+            device.get_buffer_device_address(
+                &vk::BufferDeviceAddressInfoBuilder::new().buffer(buffer),
+            )
+        };
+
+        tracing::info!("created buffer {}", name);
+
         BufferResource {
             buffer,
             allocation: Some(allocation),
-            device,
-            allocator,
+            device_address,
+            name: String::from(name),
         }
     }
 
-    pub fn store<T: Copy>(&mut self, data: &[T]) {
+    pub fn store<T: Copy>(&mut self, device: &DeviceLoader, data: &[T]) {
         let buffer_size = std::mem::size_of::<T>() * data.len();
 
         unsafe {
             match self.allocation.as_mut().unwrap().map(
-                EruptMemoryDevice::wrap(&self.device),
+                EruptMemoryDevice::wrap(device),
                 0,
                 buffer_size,
             ) {
@@ -80,31 +89,32 @@ impl BufferResource {
                     self.allocation
                         .as_mut()
                         .unwrap()
-                        .unmap(EruptMemoryDevice::wrap(&self.device))
+                        .unmap(EruptMemoryDevice::wrap(device))
                 }
                 Err(err) => panic!("Error {}", err),
             }
         };
     }
 
-    pub fn get_device_address(&self) -> vk::DeviceAddress {
+    pub fn destroy(
+        &mut self,
+        device: &DeviceLoader,
+        allocator: &mut GpuAllocator<vk::DeviceMemory>,
+    ) {
         unsafe {
-            self.device.get_buffer_device_address(
-                &vk::BufferDeviceAddressInfoBuilder::new().buffer(self.buffer),
-            )
+            tracing::info!("destroying buffer {}", self.name);
+            device.destroy_buffer(Some(self.buffer), None);
+            allocator.dealloc(
+                EruptMemoryDevice::wrap(device),
+                self.allocation.take().unwrap(),
+            );
         }
     }
 }
 
 impl Drop for BufferResource {
     fn drop(&mut self) {
-        unsafe {
-            self.device.destroy_buffer(Some(self.buffer), None);
-            self.allocator.lock().unwrap().dealloc(
-                EruptMemoryDevice::wrap(&self.device),
-                self.allocation.take().unwrap(),
-            );
-        }
+        tracing::info!("dropping buffer {}", self.name);
     }
 }
 

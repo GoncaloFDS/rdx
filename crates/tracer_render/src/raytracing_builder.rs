@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 pub struct RaytracingBuilder {
     blas_container: Vec<BlasEntry>,
     tlas: Tlas,
+    instances_buffer: BufferResource,
 
     queue_index: u32,
     queue: vk::Queue,
@@ -27,6 +28,7 @@ impl RaytracingBuilder {
         RaytracingBuilder {
             blas_container: vec![],
             tlas: Default::default(),
+            instances_buffer: Default::default(),
             queue_index,
             queue,
             device,
@@ -94,6 +96,7 @@ impl RaytracingBuilder {
                 vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                 UsageFlags::FAST_DEVICE_ACCESS | UsageFlags::DEVICE_ADDRESS,
+                "blas",
             );
 
             let create_info = vk::AccelerationStructureCreateInfoKHRBuilder::new()
@@ -114,13 +117,14 @@ impl RaytracingBuilder {
             max_scracth = size_info.build_scratch_size.max(max_scracth);
         }
 
-        let scratch_buffer = BufferResource::new(
+        let mut scratch_buffer = BufferResource::new(
             self.device.clone(),
             self.allocator.clone(),
             max_scracth,
             vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                 | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::FAST_DEVICE_ACCESS | UsageFlags::DEVICE_ADDRESS,
+            "blas scrath",
         );
 
         let query_pool = unsafe {
@@ -154,7 +158,7 @@ impl RaytracingBuilder {
 
         // Building the acceleration structures
         for (i, blas) in self.blas_container.iter().enumerate() {
-            build_infos[i].scratch_data.device_address = scratch_buffer.get_device_address();
+            build_infos[i].scratch_data.device_address = scratch_buffer.device_address;
 
             unsafe {
                 self.device
@@ -203,6 +207,7 @@ impl RaytracingBuilder {
         command_pool.destroy();
 
         unsafe { self.device.destroy_query_pool(Some(query_pool), None) }
+        scratch_buffer.destroy(&self.device, &mut self.allocator.lock().unwrap())
     }
 
     pub fn build_tlas(
@@ -246,14 +251,16 @@ impl RaytracingBuilder {
             todo!();
         }
 
-        let mut instances_buffer = BufferResource::new(
+        self.instances_buffer = BufferResource::new(
             self.device.clone(),
             self.allocator.clone(),
             instance_desc_size as _,
             vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::DEVICE_ADDRESS | UsageFlags::HOST_ACCESS,
+            "instances",
         );
-        instances_buffer.store(&geometry_instances);
+        self.instances_buffer
+            .store(&self.device, &geometry_instances);
 
         let memory_barrier = vk::MemoryBarrierBuilder::new()
             .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
@@ -275,7 +282,7 @@ impl RaytracingBuilder {
         let instances_vk = vk::AccelerationStructureGeometryInstancesDataKHRBuilder::new()
             .array_of_pointers(false)
             .data(vk::DeviceOrHostAddressConstKHR {
-                device_address: instances_buffer.get_device_address(),
+                device_address: self.instances_buffer.device_address,
             })
             .build();
 
@@ -315,6 +322,7 @@ impl RaytracingBuilder {
                 vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                 UsageFlags::FAST_DEVICE_ACCESS | UsageFlags::DEVICE_ADDRESS,
+                "tlas",
             );
 
             let create_info = vk::AccelerationStructureCreateInfoKHRBuilder::new()
@@ -335,13 +343,14 @@ impl RaytracingBuilder {
         }
 
         // scratch memory
-        let scratch_buffer = BufferResource::new(
+        let mut scratch_buffer = BufferResource::new(
             self.device.clone(),
             self.allocator.clone(),
             size_info.acceleration_structure_size,
             vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                 | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::FAST_DEVICE_ACCESS | UsageFlags::DEVICE_ADDRESS,
+            "tlas scratch",
         );
 
         build_info.src_acceleration_structure = if update {
@@ -352,7 +361,7 @@ impl RaytracingBuilder {
         build_info.dst_acceleration_structure =
             self.tlas.acceleration_structure.as_ref().unwrap().accel;
         build_info.scratch_data = vk::DeviceOrHostAddressKHR {
-            device_address: scratch_buffer.get_device_address(),
+            device_address: scratch_buffer.device_address,
         };
 
         let build_offset_info = vk::AccelerationStructureBuildRangeInfoKHRBuilder::new()
@@ -373,6 +382,7 @@ impl RaytracingBuilder {
         }
         command_pool.submit_and_wait(&[command_buffer]);
         command_pool.destroy();
+        scratch_buffer.destroy(&self.device, &mut self.allocator.lock().unwrap())
     }
 
     pub fn destroy(&mut self) {
@@ -399,12 +409,12 @@ impl BlasInput {
         let triangles = vk::AccelerationStructureGeometryTrianglesDataKHRBuilder::new()
             .vertex_format(vk::Format::R32G32B32_SFLOAT)
             .vertex_data(vk::DeviceOrHostAddressConstKHR {
-                device_address: vertex_buffer.get_device_address(),
+                device_address: vertex_buffer.device_address,
             })
             .vertex_stride(vertex_stride as _)
             .index_type(vk::IndexType::UINT16)
             .index_data(vk::DeviceOrHostAddressConstKHR {
-                device_address: index_buffer.get_device_address(),
+                device_address: index_buffer.device_address,
             })
             .max_vertex(vertices.len() as _)
             .build();
@@ -478,7 +488,7 @@ impl AccelerationStructureInstance {
             .as_ref()
             .unwrap()
             .buffer
-            .get_device_address();
+            .device_address;
 
         vk::AccelerationStructureInstanceKHRBuilder::new()
             .instance_custom_index(self.instance_custom_id)
