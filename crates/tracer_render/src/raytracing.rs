@@ -1,11 +1,25 @@
 use crate::buffer_resource::{BufferResource, Texture};
 use crate::raytracing_builder::{AccelerationStructureInstance, BlasInput, RaytracingBuilder};
+use crate::renderer::create_shader_module;
 use crate::vertex::Vertex;
+use crevice::std430::{AsStd430, Std430};
 use erupt::{vk, DeviceLoader, ExtendableFrom};
-use glam::vec3;
+use glam::{vec3, Vec3, Vec4};
 use gpu_alloc::{GpuAllocator, UsageFlags};
 use gpu_alloc_erupt::EruptMemoryDevice;
+use std::ffi::{CStr, CString};
+use std::io::Read;
 use std::sync::{Arc, Mutex};
+
+// #[derive(Copy, Clone, AsStd430)]
+pub struct PushConstants {
+    clear_color: Vec4,
+    light_position: Vec3,
+    light_intensity: f32,
+}
+
+unsafe impl Send for RaytracingContext {}
+unsafe impl Sync for RaytracingContext {}
 
 pub struct RaytracingContext {
     device: Arc<DeviceLoader>,
@@ -19,6 +33,10 @@ pub struct RaytracingContext {
     descriptor_set: vk::DescriptorSet,
 
     offscreen_target: Texture,
+
+    shader_groups: Vec<vk::RayTracingShaderGroupCreateInfoKHR>,
+    pipeline_layout: vk::PipelineLayout,
+    pipeline: vk::Pipeline,
 }
 
 impl RaytracingContext {
@@ -41,6 +59,9 @@ impl RaytracingContext {
             descriptor_set_layout: Default::default(),
             descriptor_set: Default::default(),
             offscreen_target: Default::default(),
+            shader_groups: vec![],
+            pipeline_layout: Default::default(),
+            pipeline: Default::default(),
         }
     }
 
@@ -266,6 +287,97 @@ impl RaytracingContext {
         tracing::info!("{:#?}", writes);
 
         unsafe { self.device.update_descriptor_sets(&writes, &[]) }
+    }
+
+    pub fn create_raytracing_pipeline(&mut self) {
+        let push_constants = [vk::PushConstantRangeBuilder::new()
+            .offset(0)
+            .size(std::mem::size_of::<PushConstants>() as u32)
+            .stage_flags(
+                vk::ShaderStageFlags::RAYGEN_KHR
+                    | vk::ShaderStageFlags::CLOSEST_HIT_KHR
+                    | vk::ShaderStageFlags::MISS_KHR,
+            )];
+
+        // only one set for now (raytracing)
+        // Maybe add a different one that is shared with the rasterization pipeline
+        let descriptor_set_layouts = [self.descriptor_set_layout];
+
+        let pipeline_layout_create_info = vk::PipelineLayoutCreateInfoBuilder::new()
+            .push_constant_ranges(&push_constants)
+            .set_layouts(&descriptor_set_layouts);
+
+        self.pipeline_layout = unsafe {
+            self.device
+                .create_pipeline_layout(&pipeline_layout_create_info, None, None)
+                .unwrap()
+        };
+
+        //
+        let shader_entry_point = CString::new("main").unwrap();
+        let pipeline_shader_stages = [
+            vk::PipelineShaderStageCreateInfoBuilder::new()
+                .stage(vk::ShaderStageFlagBits::RAYGEN_KHR)
+                .module(create_shader_module(
+                    &self.device,
+                    "assets/shaders/raytrace.rgen.spv",
+                ))
+                .name(&shader_entry_point),
+            vk::PipelineShaderStageCreateInfoBuilder::new()
+                .stage(vk::ShaderStageFlagBits::MISS_KHR)
+                .module(create_shader_module(
+                    &self.device,
+                    "assets/shaders/raytrace.rmiss.spv",
+                ))
+                .name(&shader_entry_point),
+            vk::PipelineShaderStageCreateInfoBuilder::new()
+                .stage(vk::ShaderStageFlagBits::CLOSEST_HIT_KHR)
+                .module(create_shader_module(
+                    &self.device,
+                    "assets/shaders/raytrace.rchit.spv",
+                ))
+                .name(&shader_entry_point),
+        ];
+
+        let shader_groups = [
+            // Raygen
+            vk::RayTracingShaderGroupCreateInfoKHRBuilder::new()
+                ._type(vk::RayTracingShaderGroupTypeKHR::GENERAL_KHR)
+                .general_shader(0)
+                .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+                .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                .intersection_shader(vk::SHADER_UNUSED_KHR),
+            // Miss
+            vk::RayTracingShaderGroupCreateInfoKHRBuilder::new()
+                ._type(vk::RayTracingShaderGroupTypeKHR::GENERAL_KHR)
+                .general_shader(1)
+                .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+                .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                .intersection_shader(vk::SHADER_UNUSED_KHR),
+            // Hit Group = Closest Hit + Any Hit
+            vk::RayTracingShaderGroupCreateInfoKHRBuilder::new()
+                ._type(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP_KHR)
+                .general_shader(vk::SHADER_UNUSED_KHR)
+                .closest_hit_shader(2)
+                .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                .intersection_shader(vk::SHADER_UNUSED_KHR),
+        ];
+
+        let pipeline_create_info = vk::RayTracingPipelineCreateInfoKHRBuilder::new()
+            .stages(&pipeline_shader_stages)
+            .groups(&shader_groups)
+            .max_pipeline_ray_recursion_depth(1)
+            .layout(self.pipeline_layout);
+
+        self.pipeline = unsafe {
+            self.device
+                .create_ray_tracing_pipelines_khr(None, None, &[pipeline_create_info], None)
+                .unwrap()[0]
+        };
+
+        for stage in &pipeline_shader_stages {
+            unsafe { self.device.destroy_shader_module(Some(stage.module), None) }
+        }
     }
 
     pub fn destroy(&mut self) {

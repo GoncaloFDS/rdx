@@ -475,17 +475,6 @@ impl Renderer {
         (swapchain_images, swapchain_image_views)
     }
 
-    fn create_shader_module(device: &DeviceLoader, file: &str) -> vk::ShaderModule {
-        use std::fs::File;
-        use std::io::*;
-        let mut shader_file = File::open(file).unwrap();
-        let mut bytes = Vec::new();
-        shader_file.read_to_end(&mut bytes).unwrap();
-        let spv = erupt::utils::decode_spv(&bytes).unwrap();
-        let module_info = vk::ShaderModuleCreateInfoBuilder::new().code(&spv);
-        unsafe { device.create_shader_module(&module_info, None, None) }.unwrap()
-    }
-
     fn create_default_render_pass(
         device: &DeviceLoader,
         presentation_settings: &PresentationSettings,
@@ -527,8 +516,8 @@ impl Renderer {
         render_pass: vk::RenderPass,
     ) -> (vk::Pipeline, vk::PipelineLayout) {
         let entry_point = CString::new("main").unwrap();
-        let shader_vert = Renderer::create_shader_module(&device, "assets/shaders/shader.vert.spv");
-        let shader_frag = Renderer::create_shader_module(&device, "assets/shaders/shader.frag.spv");
+        let shader_vert = create_shader_module(&device, "assets/shaders/shader.vert.spv");
+        let shader_frag = create_shader_module(&device, "assets/shaders/shader.frag.spv");
 
         let shader_stages = vec![
             vk::PipelineShaderStageCreateInfoBuilder::new()
@@ -662,6 +651,7 @@ impl Renderer {
         self.raytracing_context.create_bottom_level_as();
         self.raytracing_context.create_top_level_as();
         self.raytracing_context.create_descriptor_set();
+        self.raytracing_context.create_raytracing_pipeline();
     }
 }
 
@@ -718,4 +708,15 @@ impl Drop for Renderer {
             self.instance.destroy_instance(None);
         }
     }
+}
+
+pub fn create_shader_module(device: &DeviceLoader, file: &str) -> vk::ShaderModule {
+    use std::fs::File;
+    use std::io::*;
+    let mut shader_file = File::open(file).unwrap_or_else(|_| panic!("Failed to open {}", file));
+    let mut bytes = Vec::new();
+    shader_file.read_to_end(&mut bytes).unwrap();
+    let spv = erupt::utils::decode_spv(&bytes).unwrap();
+    let module_info = vk::ShaderModuleCreateInfoBuilder::new().code(&spv);
+    unsafe { device.create_shader_module(&module_info, None, None) }.unwrap()
 }

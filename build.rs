@@ -41,6 +41,8 @@ fn compile_shaders() {
                 .arg(&path)
                 .arg("-o")
                 .arg(output_name)
+                .arg("--target-env")
+                .arg("spirv1.5")
                 .output();
 
             handle_program_result(result);
