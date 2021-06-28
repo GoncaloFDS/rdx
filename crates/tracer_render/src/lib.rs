@@ -5,11 +5,20 @@ use bevy::winit::WinitWindows;
 
 use crate::renderer::Renderer;
 
-mod buffer_resource;
-mod commands;
-mod raytracing;
-mod raytracing_builder;
+mod acceleration_structures;
+mod buffer;
+mod command_buffer;
+mod descriptor;
+mod device;
+mod encoder;
+mod framebuffer;
+mod image;
+mod pipeline;
+mod queue;
+mod render_pass;
 mod renderer;
+mod resources;
+mod shader;
 mod util;
 mod vertex;
 

@@ -1,14 +1,14 @@
-use crate::commands::CommandPool;
-use crate::raytracing::RaytracingContext;
+use crate::device::Device;
 use erupt::utils::surface;
 use erupt::vk1_0::{DeviceMemory, PhysicalDevice};
 use erupt::{
     cstr, vk, DefaultEntryLoader, DeviceLoader, EntryLoader, ExtendableFrom, InstanceLoader,
 };
 use gpu_alloc::GpuAllocator;
+use parking_lot::Mutex;
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use winit::window::Window;
 
 const VALIDATION_LAYER: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
@@ -30,34 +30,12 @@ unsafe impl Sync for RendererProperties {}
 
 pub struct Renderer {
     physical_device: vk::PhysicalDevice,
-
-    surface: vk::SurfaceKHR,
-
     queue: vk::Queue,
-
-    command_pool: CommandPool,
-    command_buffers: Vec<vk::CommandBuffer>,
-
-    render_pass: vk::RenderPass,
-
-    swapchain: vk::SwapchainKHR,
-    swapchain_images: Vec<vk::Image>,
-    swapchain_image_views: Vec<vk::ImageView>,
-    swapchain_framebuffers: Vec<vk::Framebuffer>,
-
-    graphics_pipeline: vk::Pipeline,
-    graphics_pipeline_layout: vk::PipelineLayout,
 
     renderer_properties: RendererProperties,
 
-    image_available_semaphores: Vec<vk::Semaphore>,
-    render_finished_semaphores: Vec<vk::Semaphore>,
-    fences: Vec<vk::Fence>,
-
     debug_messenger: vk::DebugUtilsMessengerEXT,
-    allocator: Arc<Mutex<GpuAllocator<vk::DeviceMemory>>>,
-    raytracing_context: RaytracingContext,
-    device: Arc<DeviceLoader>,
+    device: Device,
     instance: InstanceLoader,
     entry: DefaultEntryLoader,
 }
@@ -92,72 +70,52 @@ impl Renderer {
             renderer_properties.queue_index,
             &device_extensions,
         );
-        let device = Arc::new(device);
+        let device = Device::new(&instance, device, physical_device);
 
-        let allocator = Arc::new(Mutex::new(Renderer::create_gpu_allocator(
-            &instance,
-            physical_device,
-        )));
-
-        let swapchain = Renderer::create_swapchain(&device, surface, &renderer_properties);
-
-        let (swapchain_images, swapchain_image_views) =
-            Renderer::get_swapchain_images(&device, swapchain, &renderer_properties);
-
-        let render_pass = Renderer::create_default_render_pass(&device, &renderer_properties);
-
-        let (graphics_pipeline, graphics_pipeline_layout) =
-            Renderer::create_graphics_pipeline(&device, &renderer_properties, render_pass);
-
-        let swapchain_framebuffers = Renderer::create_framebuffers(
-            &device,
-            render_pass,
-            &swapchain_image_views,
-            renderer_properties.surface_capabilities.current_extent,
-        );
-
-        let command_pool = CommandPool::new(
-            device.clone(),
-            queue,
-            renderer_properties.queue_index,
-            vk::CommandPoolCreateFlags::TRANSIENT,
-        );
-
-        let command_buffers = command_pool.create_command_buffers(
-            vk::CommandBufferLevel::PRIMARY,
-            swapchain_framebuffers.len() as u32,
-        );
-
-        let (image_available_semaphores, render_finished_semaphores, fences) =
-            Renderer::create_sync_objects(&device);
-
-        let raytracing_context = RaytracingContext::new(
-            device.clone(),
-            allocator.clone(),
-            renderer_properties,
-            queue,
-        );
+        // let swapchain = Renderer::create_swapchain(&device, surface, &renderer_properties);
+        //
+        // let (swapchain_images, swapchain_image_views) =
+        //     Renderer::get_swapchain_images(&device, swapchain, &renderer_properties);
+        //
+        // let render_pass = Renderer::create_default_render_pass(&device, &renderer_properties);
+        //
+        // let (graphics_pipeline, graphics_pipeline_layout) =
+        //     Renderer::create_graphics_pipeline(&device, &renderer_properties, render_pass);
+        //
+        // let swapchain_framebuffers = Renderer::create_framebuffers(
+        //     &device,
+        //     render_pass,
+        //     &swapchain_image_views,
+        //     renderer_properties.surface_capabilities.current_extent,
+        // );
+        //
+        // let command_pool = CommandPool::new(
+        //     device.clone(),
+        //     queue,
+        //     renderer_properties.queue_index,
+        //     vk::CommandPoolCreateFlags::TRANSIENT,
+        // );
+        //
+        // let command_buffers = command_pool.create_command_buffers(
+        //     vk::CommandBufferLevel::PRIMARY,
+        //     swapchain_framebuffers.len() as u32,
+        // );
+        //
+        // let (image_available_semaphores, render_finished_semaphores, fences) =
+        //     Renderer::create_sync_objects(&device);
+        //
+        // let raytracing_context = RaytracingContext::new(
+        //     device.clone(),
+        //     allocator.clone(),
+        //     renderer_properties,
+        //     queue,
+        // );
 
         Renderer {
             physical_device,
-            surface,
             queue,
-            command_pool,
-            command_buffers,
-            render_pass,
-            swapchain,
-            swapchain_images,
-            swapchain_image_views,
-            swapchain_framebuffers,
-            graphics_pipeline,
-            graphics_pipeline_layout,
             renderer_properties,
-            image_available_semaphores,
-            render_finished_semaphores,
-            fences,
             debug_messenger,
-            allocator,
-            raytracing_context,
             device,
             instance,
             entry,
@@ -655,66 +613,66 @@ impl Renderer {
     }
 
     pub fn init(&mut self) {
-        self.raytracing_context.create_offscreen_render();
-        self.raytracing_context.create_bottom_level_as();
-        self.raytracing_context.create_top_level_as();
-        self.raytracing_context.create_descriptor_set();
-        self.raytracing_context.create_raytracing_pipeline();
-        self.raytracing_context.create_shader_binding_table();
+        // self.raytracing_context.create_offscreen_render();
+        // self.raytracing_context.create_bottom_level_as();
+        // self.raytracing_context.create_top_level_as();
+        // self.raytracing_context.create_descriptor_set();
+        // self.raytracing_context.create_raytracing_pipeline();
+        // self.raytracing_context.create_shader_binding_table();
     }
 }
 
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
-            self.device.device_wait_idle().unwrap();
-
-            for &semaphore in self
-                .image_available_semaphores
-                .iter()
-                .chain(self.render_finished_semaphores.iter())
-            {
-                self.device.destroy_semaphore(Some(semaphore), None);
-            }
-
-            for &fence in &self.fences {
-                self.device.destroy_fence(Some(fence), None);
-            }
-
-            self.command_pool.destroy();
-
-            for &framebuffer in &self.swapchain_framebuffers {
-                self.device.destroy_framebuffer(Some(framebuffer), None);
-            }
-
-            self.device
-                .destroy_pipeline(Some(self.graphics_pipeline), None);
-
-            self.device
-                .destroy_render_pass(Some(self.render_pass), None);
-
-            self.device
-                .destroy_pipeline_layout(Some(self.graphics_pipeline_layout), None);
-
-            for &image_view in &self.swapchain_image_views {
-                self.device.destroy_image_view(Some(image_view), None);
-            }
-
-            self.device
-                .destroy_swapchain_khr(Some(self.swapchain), None);
-
-            self.raytracing_context.destroy();
-
-            self.device.destroy_device(None);
-
-            self.instance.destroy_surface_khr(Some(self.surface), None);
-
-            if !self.debug_messenger.is_null() {
-                self.instance
-                    .destroy_debug_utils_messenger_ext(Some(self.debug_messenger), None);
-            }
-
-            self.instance.destroy_instance(None);
+            // self.device.device_wait_idle().unwrap();
+            //
+            // for &semaphore in self
+            //     .image_available_semaphores
+            //     .iter()
+            //     .chain(self.render_finished_semaphores.iter())
+            // {
+            //     self.device.destroy_semaphore(Some(semaphore), None);
+            // }
+            //
+            // for &fence in &self.fences {
+            //     self.device.destroy_fence(Some(fence), None);
+            // }
+            //
+            // self.command_pool.destroy();
+            //
+            // for &framebuffer in &self.swapchain_framebuffers {
+            //     self.device.destroy_framebuffer(Some(framebuffer), None);
+            // }
+            //
+            // self.device
+            //     .destroy_pipeline(Some(self.graphics_pipeline), None);
+            //
+            // self.device
+            //     .destroy_render_pass(Some(self.render_pass), None);
+            //
+            // self.device
+            //     .destroy_pipeline_layout(Some(self.graphics_pipeline_layout), None);
+            //
+            // for &image_view in &self.swapchain_image_views {
+            //     self.device.destroy_image_view(Some(image_view), None);
+            // }
+            //
+            // self.device
+            //     .destroy_swapchain_khr(Some(self.swapchain), None);
+            //
+            // self.raytracing_context.destroy();
+            //
+            // self.device.destroy_device(None);
+            //
+            // self.instance.destroy_surface_khr(Some(self.surface), None);
+            //
+            // if !self.debug_messenger.is_null() {
+            //     self.instance
+            //         .destroy_debug_utils_messenger_ext(Some(self.debug_messenger), None);
+            // }
+            //
+            // self.instance.destroy_instance(None);
         }
     }
 }
