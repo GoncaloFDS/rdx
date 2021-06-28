@@ -90,8 +90,8 @@ impl RaytracingBuilder {
             };
 
             let blas_buffer = BufferResource::new(
-                self.device.clone(),
-                self.allocator.clone(),
+                &self.device,
+                &mut self.allocator.lock().unwrap(),
                 size_info.acceleration_structure_size,
                 vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -118,8 +118,8 @@ impl RaytracingBuilder {
         }
 
         let mut scratch_buffer = BufferResource::new(
-            self.device.clone(),
-            self.allocator.clone(),
+            &self.device,
+            &mut self.allocator.lock().unwrap(),
             max_scracth,
             vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                 | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -252,8 +252,8 @@ impl RaytracingBuilder {
         }
 
         self.instances_buffer = BufferResource::new(
-            self.device.clone(),
-            self.allocator.clone(),
+            &self.device,
+            &mut self.allocator.lock().unwrap(),
             instance_desc_size as _,
             vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::DEVICE_ADDRESS | UsageFlags::HOST_ACCESS,
@@ -316,8 +316,8 @@ impl RaytracingBuilder {
 
         if !update {
             let tlas_buffer = BufferResource::new(
-                self.device.clone(),
-                self.allocator.clone(),
+                &self.device,
+                &mut self.allocator.lock().unwrap(),
                 size_info.acceleration_structure_size,
                 vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -344,8 +344,8 @@ impl RaytracingBuilder {
 
         // scratch memory
         let mut scratch_buffer = BufferResource::new(
-            self.device.clone(),
-            self.allocator.clone(),
+            &self.device,
+            &mut self.allocator.lock().unwrap(),
             size_info.acceleration_structure_size,
             vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
                 | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,

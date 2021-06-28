@@ -14,8 +14,8 @@ pub struct BufferResource {
 
 impl BufferResource {
     pub fn new(
-        device: Arc<DeviceLoader>,
-        allocator: Arc<Mutex<GpuAllocator<vk::DeviceMemory>>>,
+        device: &DeviceLoader,
+        allocator: &mut GpuAllocator<vk::DeviceMemory>,
         buffer_size: vk::DeviceSize,
         usage_flags: vk::BufferUsageFlags,
         memory_usage: UsageFlags,
@@ -36,7 +36,7 @@ impl BufferResource {
         let mem_requirements = unsafe { device.get_buffer_memory_requirements(buffer, None) };
 
         let allocation = unsafe {
-            allocator.lock().unwrap().alloc(
+            allocator.alloc(
                 EruptMemoryDevice::wrap(&device),
                 Request {
                     size: mem_requirements.size,

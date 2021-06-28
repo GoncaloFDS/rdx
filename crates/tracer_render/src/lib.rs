@@ -10,6 +10,7 @@ mod commands;
 mod raytracing;
 mod raytracing_builder;
 mod renderer;
+mod util;
 mod vertex;
 
 #[derive(Default)]

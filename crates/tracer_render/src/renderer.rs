@@ -14,13 +14,19 @@ use winit::window::Window;
 const VALIDATION_LAYER: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
 const FRAMES_IN_FLIGHT: usize = 2;
 
-pub struct PresentationSettings {
-    queue_index: u32,
-    surface_format: vk::SurfaceFormatKHR,
-    present_mode: vk::PresentModeKHR,
-    device_properties: vk::PhysicalDeviceProperties,
-    surface_capabilities: vk::SurfaceCapabilitiesKHR,
+#[derive(Copy, Clone)]
+pub struct RendererProperties {
+    pub queue_index: u32,
+    pub surface_format: vk::SurfaceFormatKHR,
+    pub present_mode: vk::PresentModeKHR,
+    pub device_properties: vk::PhysicalDeviceProperties,
+    pub surface_capabilities: vk::SurfaceCapabilitiesKHR,
+    pub raytracing_properties: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+    pub accel_properties: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
 }
+
+unsafe impl Send for RendererProperties {}
+unsafe impl Sync for RendererProperties {}
 
 pub struct Renderer {
     physical_device: vk::PhysicalDevice,
@@ -42,7 +48,7 @@ pub struct Renderer {
     graphics_pipeline: vk::Pipeline,
     graphics_pipeline_layout: vk::PipelineLayout,
 
-    presentation_settings: PresentationSettings,
+    renderer_properties: RendererProperties,
 
     image_available_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphores: Vec<vk::Semaphore>,
@@ -73,17 +79,17 @@ impl Renderer {
 
         let surface = unsafe { surface::create_surface(&instance, window, None).unwrap() };
 
-        let (physical_device, presentation_settings) =
+        let (physical_device, renderer_properties) =
             { Renderer::pick_physical_device(&instance, surface, &device_extensions) };
 
         tracing::debug!("Using physical device: {:?}", unsafe {
-            CStr::from_ptr(presentation_settings.device_properties.device_name.as_ptr())
+            CStr::from_ptr(renderer_properties.device_properties.device_name.as_ptr())
         });
 
         let (device, queue) = Renderer::create_logical_device(
             &instance,
             &physical_device,
-            presentation_settings.queue_index,
+            renderer_properties.queue_index,
             &device_extensions,
         );
         let device = Arc::new(device);
@@ -93,27 +99,27 @@ impl Renderer {
             physical_device,
         )));
 
-        let swapchain = Renderer::create_swapchain(&device, surface, &presentation_settings);
+        let swapchain = Renderer::create_swapchain(&device, surface, &renderer_properties);
 
         let (swapchain_images, swapchain_image_views) =
-            Renderer::get_swapchain_images(&device, swapchain, &presentation_settings);
+            Renderer::get_swapchain_images(&device, swapchain, &renderer_properties);
 
-        let render_pass = Renderer::create_default_render_pass(&device, &presentation_settings);
+        let render_pass = Renderer::create_default_render_pass(&device, &renderer_properties);
 
         let (graphics_pipeline, graphics_pipeline_layout) =
-            Renderer::create_graphics_pipeline(&device, &presentation_settings, render_pass);
+            Renderer::create_graphics_pipeline(&device, &renderer_properties, render_pass);
 
         let swapchain_framebuffers = Renderer::create_framebuffers(
             &device,
             render_pass,
             &swapchain_image_views,
-            presentation_settings.surface_capabilities.current_extent,
+            renderer_properties.surface_capabilities.current_extent,
         );
 
         let command_pool = CommandPool::new(
             device.clone(),
             queue,
-            presentation_settings.queue_index,
+            renderer_properties.queue_index,
             vk::CommandPoolCreateFlags::TRANSIENT,
         );
 
@@ -128,7 +134,7 @@ impl Renderer {
         let raytracing_context = RaytracingContext::new(
             device.clone(),
             allocator.clone(),
-            presentation_settings.queue_index,
+            renderer_properties,
             queue,
         );
 
@@ -145,7 +151,7 @@ impl Renderer {
             swapchain_framebuffers,
             graphics_pipeline,
             graphics_pipeline_layout,
-            presentation_settings,
+            renderer_properties,
             image_available_semaphores,
             render_finished_semaphores,
             fences,
@@ -242,7 +248,7 @@ impl Renderer {
         instance: &InstanceLoader,
         surface: vk::SurfaceKHR,
         device_extensions: &[*const i8],
-    ) -> (vk::PhysicalDevice, PresentationSettings) {
+    ) -> (vk::PhysicalDevice, RendererProperties) {
         let physical_devices = unsafe { instance.enumerate_physical_devices(None) };
         let chosen = physical_devices
             .unwrap()
@@ -333,14 +339,16 @@ impl Renderer {
                     .get_physical_device_surface_capabilities_khr(physical_device, surface, None)
                     .unwrap();
 
-                let presentation_settings = PresentationSettings {
+                let renderer_properties = RendererProperties {
                     queue_index: queue_family,
                     surface_format,
                     present_mode,
                     device_properties,
                     surface_capabilities,
+                    accel_properties,
+                    raytracing_properties,
                 };
-                Some((physical_device, presentation_settings))
+                Some((physical_device, renderer_properties))
             })
             .max_by_key(
                 |(_, properties)| match properties.device_properties.device_type {
@@ -413,7 +421,7 @@ impl Renderer {
     fn create_swapchain(
         device: &DeviceLoader,
         surface: vk::SurfaceKHR,
-        presentation_settings: &PresentationSettings,
+        presentation_settings: &RendererProperties,
     ) -> vk::SwapchainKHR {
         let surface_caps = presentation_settings.surface_capabilities;
         let mut image_count = surface_caps.min_image_count + 1;
@@ -442,7 +450,7 @@ impl Renderer {
     fn get_swapchain_images(
         device: &DeviceLoader,
         swapchain: vk::SwapchainKHR,
-        presentation_settings: &PresentationSettings,
+        presentation_settings: &RendererProperties,
     ) -> (Vec<vk::Image>, Vec<vk::ImageView>) {
         let swapchain_images = unsafe { device.get_swapchain_images_khr(swapchain, None) }.unwrap();
 
@@ -477,7 +485,7 @@ impl Renderer {
 
     fn create_default_render_pass(
         device: &DeviceLoader,
-        presentation_settings: &PresentationSettings,
+        presentation_settings: &RendererProperties,
     ) -> vk::RenderPass {
         let attachments = vec![vk::AttachmentDescriptionBuilder::new()
             .format(presentation_settings.surface_format.format)
@@ -512,7 +520,7 @@ impl Renderer {
 
     fn create_graphics_pipeline(
         device: &DeviceLoader,
-        presentation_settings: &PresentationSettings,
+        presentation_settings: &RendererProperties,
         render_pass: vk::RenderPass,
     ) -> (vk::Pipeline, vk::PipelineLayout) {
         let entry_point = CString::new("main").unwrap();

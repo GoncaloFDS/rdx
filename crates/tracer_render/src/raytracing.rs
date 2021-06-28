@@ -1,6 +1,7 @@
 use crate::buffer_resource::{BufferResource, Texture};
 use crate::raytracing_builder::{AccelerationStructureInstance, BlasInput, RaytracingBuilder};
-use crate::renderer::create_shader_module;
+use crate::renderer::{create_shader_module, RendererProperties};
+use crate::util::align_up;
 use crate::vertex::Vertex;
 use crevice::std430::{AsStd430, Std430};
 use erupt::{vk, DeviceLoader, ExtendableFrom};
@@ -24,8 +25,9 @@ unsafe impl Sync for RaytracingContext {}
 pub struct RaytracingContext {
     device: Arc<DeviceLoader>,
     allocator: Arc<Mutex<GpuAllocator<vk::DeviceMemory>>>,
-    queue_index: u32,
     queue: vk::Queue,
+
+    renderer_properties: RendererProperties,
     raytracing_builder: RaytracingBuilder,
     descriptor_set_bindings: DescriptorSetBindings,
     descriptor_pool: vk::DescriptorPool,
@@ -34,7 +36,7 @@ pub struct RaytracingContext {
 
     offscreen_target: Texture,
 
-    shader_groups: Vec<vk::RayTracingShaderGroupCreateInfoKHR>,
+    shader_group_count: u32,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
 
@@ -48,15 +50,19 @@ impl RaytracingContext {
     pub fn new(
         device: Arc<DeviceLoader>,
         allocator: Arc<Mutex<GpuAllocator<vk::DeviceMemory>>>,
-        queue_index: u32,
+        renderer_properties: RendererProperties,
         queue: vk::Queue,
     ) -> Self {
-        let raytracing_builder =
-            RaytracingBuilder::new(device.clone(), allocator.clone(), queue_index, queue);
+        let raytracing_builder = RaytracingBuilder::new(
+            device.clone(),
+            allocator.clone(),
+            renderer_properties.queue_index,
+            queue,
+        );
         RaytracingContext {
             device,
             allocator,
-            queue_index,
+            renderer_properties,
             queue,
             raytracing_builder,
             descriptor_set_bindings: Default::default(),
@@ -64,7 +70,7 @@ impl RaytracingContext {
             descriptor_set_layout: Default::default(),
             descriptor_set: Default::default(),
             offscreen_target: Default::default(),
-            shader_groups: vec![],
+            shader_group_count: 0,
             pipeline_layout: Default::default(),
             pipeline: Default::default(),
             sbt_buffer: Default::default(),
@@ -178,8 +184,8 @@ impl RaytracingContext {
         let vertex_stride = std::mem::size_of::<Vertex>();
         let vertex_buffer_size = vertex_stride * vertex_count;
         self.vertex_buffer = BufferResource::new(
-            self.device.clone(),
-            self.allocator.clone(),
+            &self.device,
+            &mut self.allocator.lock().unwrap(),
             vertex_buffer_size as u64,
             vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::DEVICE_ADDRESS | UsageFlags::HOST_ACCESS,
@@ -191,8 +197,8 @@ impl RaytracingContext {
         let index_count = indices.len();
         let index_buffer_size = std::mem::size_of::<u16>() * index_count;
         self.index_buffer = BufferResource::new(
-            self.device.clone(),
-            self.allocator.clone(),
+            &self.device,
+            &mut self.allocator.lock().unwrap(),
             index_buffer_size as u64,
             vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             UsageFlags::DEVICE_ADDRESS | UsageFlags::HOST_ACCESS,
@@ -372,6 +378,7 @@ impl RaytracingContext {
                 .any_hit_shader(vk::SHADER_UNUSED_KHR)
                 .intersection_shader(vk::SHADER_UNUSED_KHR),
         ];
+        self.shader_group_count = shader_groups.len() as _;
 
         let pipeline_create_info = vk::RayTracingPipelineCreateInfoKHRBuilder::new()
             .stages(&pipeline_shader_stages)
@@ -390,7 +397,45 @@ impl RaytracingContext {
         }
     }
 
-    pub fn create_shader_binding_table(&mut self) {}
+    pub fn create_shader_binding_table(&mut self) {
+        let group_size = self
+            .renderer_properties
+            .raytracing_properties
+            .shader_group_handle_size;
+        let group_align = self
+            .renderer_properties
+            .raytracing_properties
+            .shader_group_base_alignment;
+        let group_align = group_align - 1;
+        let group_align = align_up(group_size, group_align).unwrap();
+        let sbt_size = self.shader_group_count * group_align;
+
+        let mut shader_handle_storage = vec![0u8; sbt_size as _];
+        unsafe {
+            self.device
+                .get_ray_tracing_shader_group_handles_khr(
+                    self.pipeline,
+                    0,
+                    self.shader_group_count as u32,
+                    shader_handle_storage.len(),
+                    shader_handle_storage.as_mut_ptr() as *mut _,
+                )
+                .unwrap()
+        }
+
+        self.sbt_buffer = BufferResource::new(
+            &self.device,
+            &mut self.allocator.lock().unwrap(),
+            sbt_size as u64,
+            vk::BufferUsageFlags::SHADER_BINDING_TABLE_KHR
+                | vk::BufferUsageFlags::TRANSFER_SRC
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            UsageFlags::HOST_ACCESS | UsageFlags::DEVICE_ADDRESS,
+            "sbt",
+        );
+
+        self.sbt_buffer.store(&self.device, &shader_handle_storage);
+    }
 
     pub fn destroy(&mut self) {
         self.raytracing_builder.destroy();
