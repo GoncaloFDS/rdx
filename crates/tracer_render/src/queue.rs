@@ -9,10 +9,10 @@ pub struct Queue {
 }
 
 impl Queue {
-    pub fn new(handle: vk::Queue, pool: vk::CommandPool, device: Device) -> Self {
+    pub fn new(handle: vk::Queue, device: Device) -> Self {
         Queue {
             handle,
-            pool,
+            pool: vk::CommandPool::null(),
             device,
         }
     }

@@ -4,7 +4,6 @@ use crate::pipeline::ShaderBindingTable;
 use crate::resources::{Buffer, Framebuffer, RayTracingPipeline, RenderPass};
 use crevice::internal::bytemuck::Pod;
 use erupt::vk;
-use winit::event::VirtualKeyCode::Comma;
 
 pub struct Encoder<'a> {
     inner: EncoderInner<'a>,

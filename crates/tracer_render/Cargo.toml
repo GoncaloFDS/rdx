@@ -15,8 +15,8 @@ serde = { version = "1.0", features = ["derive"] }
 tobj = "3.0"
 
 # Graphics
-erupt = "0.18.0+174"
-gpu-alloc-erupt = "0.4"
+erupt = "0.19"
+gpu-alloc-erupt = "0.5"
 gpu-alloc = "0.4"
 
 # Windowing

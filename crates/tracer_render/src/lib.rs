@@ -13,12 +13,16 @@ mod device;
 mod encoder;
 mod framebuffer;
 mod image;
+mod physical_device;
 mod pipeline;
 mod queue;
+mod render_context;
 mod render_pass;
 mod renderer;
 mod resources;
 mod shader;
+mod surface;
+mod swapchain;
 mod util;
 mod vertex;
 
@@ -46,8 +50,6 @@ fn setup(
 
     let winit_window = winit_windows.get_window(window_id).unwrap();
     let mut renderer = Renderer::new(winit_window);
-
-    renderer.init();
 
     commands.insert_resource(renderer);
 }

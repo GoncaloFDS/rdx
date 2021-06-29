@@ -82,6 +82,10 @@ impl MappableBuffer {
             allocation_flags,
         }
     }
+
+    pub unsafe fn memory_block(&mut self) -> &mut MemoryBlock<vk::DeviceMemory> {
+        &mut *self.inner.memory_block.get()
+    }
 }
 
 struct ImageInner {
