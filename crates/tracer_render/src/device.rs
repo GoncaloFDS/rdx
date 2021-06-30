@@ -1,5 +1,5 @@
 use crate::buffer::BufferInfo;
-use crate::resources::{Buffer, MappableBuffer};
+use crate::resources::{Buffer, MappableBuffer, Semaphore};
 use crate::surface::Surface;
 use crate::swapchain::Swapchain;
 use crevice::internal::bytemuck::Pod;
@@ -16,6 +16,8 @@ pub struct DeviceInner {
     physical_device: vk::PhysicalDevice,
     allocator: Mutex<GpuAllocator<vk::DeviceMemory>>,
     buffers: Mutex<Slab<vk::Buffer>>,
+    semaphores: Mutex<Slab<vk::Semaphore>>,
+    swapchains: Mutex<Slab<vk::SwapchainKHR>>,
     descriptor_pools: Mutex<Slab<vk::DescriptorPool>>,
     descriptor_set_layouts: Mutex<Slab<vk::DescriptorPool>>,
 }
@@ -42,6 +44,8 @@ impl Device {
                 physical_device,
                 allocator,
                 buffers: Mutex::new(Slab::with_capacity(1024)),
+                semaphores: Mutex::new(Slab::with_capacity(1024)),
+                swapchains: Mutex::new(Slab::with_capacity(1024)),
                 descriptor_pools: Mutex::new(Slab::with_capacity(1024)),
                 descriptor_set_layouts: Mutex::new(Slab::with_capacity(1024)),
             }),
@@ -54,6 +58,10 @@ impl Device {
 
     pub fn handle(&self) -> &DeviceLoader {
         &self.inner.handle
+    }
+
+    pub fn swapchains(&self) -> &Mutex<Slab<vk::SwapchainKHR>> {
+        &self.inner.swapchains
     }
 
     pub fn create_buffer(&self, info: BufferInfo, allocation_flags: UsageFlags) -> MappableBuffer {
@@ -152,7 +160,35 @@ impl Device {
         Swapchain::new(self, surface)
     }
 
+    pub fn create_semaphore(&self) -> Semaphore {
+        let semaphore = unsafe {
+            self.handle()
+                .create_semaphore(&vk::SemaphoreCreateInfoBuilder::new(), None)
+                .unwrap()
+        };
+
+        self.inner.semaphores.lock().insert(semaphore);
+
+        Semaphore { handle: semaphore }
+    }
+
     pub fn cleanup(&mut self) {
-        unsafe { self.inner.handle.destroy_device(None) }
+        let device = self.handle();
+
+        unsafe {
+            self.inner
+                .swapchains
+                .lock()
+                .iter()
+                .for_each(|(_, &swapchain)| device.destroy_swapchain_khr(Some(swapchain), None));
+
+            self.inner
+                .semaphores
+                .lock()
+                .iter()
+                .for_each(|(_, &semaphore)| device.destroy_semaphore(Some(semaphore), None));
+
+            self.handle().destroy_device(None)
+        }
     }
 }

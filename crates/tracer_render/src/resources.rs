@@ -114,7 +114,7 @@ pub struct Fence {
 }
 
 pub struct Semaphore {
-    handle: vk::Semaphore,
+    pub handle: vk::Semaphore,
 }
 
 pub struct RenderPass {

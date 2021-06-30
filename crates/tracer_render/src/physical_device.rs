@@ -157,6 +157,10 @@ impl PhysicalDevice {
         })
     }
 
+    pub fn info(&self) -> &PhysicalDeviceInfo {
+        &self.info
+    }
+
     pub fn create_device(
         &self,
         instance: Arc<InstanceLoader>,
