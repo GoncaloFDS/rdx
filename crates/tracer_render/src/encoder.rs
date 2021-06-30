@@ -1,7 +1,7 @@
 use crate::acceleration_structures::AccelerationStructureBuildGeometryInfo;
 use crate::command_buffer::CommandBuffer;
 use crate::pipeline::ShaderBindingTable;
-use crate::resources::{Buffer, Framebuffer, RayTracingPipeline, RenderPass};
+use crate::resources::{Buffer, RayTracingPipeline};
 use crevice::internal::bytemuck::Pod;
 use erupt::vk;
 

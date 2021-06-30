@@ -19,4 +19,8 @@ impl RenderContext {
     pub fn new(device: Device, queue: Queue) -> Self {
         RenderContext { device, queue }
     }
+
+    pub fn destroy_context(&mut self) {
+        self.device.cleanup();
+    }
 }

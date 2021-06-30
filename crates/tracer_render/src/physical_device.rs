@@ -1,13 +1,10 @@
+use crate::debug::VALIDATION_LAYER;
 use crate::device::Device;
 use crate::queue::Queue;
 use crate::surface::Surface;
-use bevy::tasks::physical_core_count;
-use erupt::{cstr, vk, DeviceLoader, ExtendableFromConst, ExtendableFromMut, InstanceLoader};
+use erupt::{vk, DeviceLoader, ExtendableFromConst, ExtendableFromMut, InstanceLoader};
 use std::ffi::CStr;
-use std::os::raw::c_char;
 use std::sync::Arc;
-
-pub const VALIDATION_LAYER: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
 
 pub struct PhysicalDevice {
     info: PhysicalDeviceInfo,

@@ -8,11 +8,13 @@ use crate::renderer::Renderer;
 mod acceleration_structures;
 mod buffer;
 mod command_buffer;
+mod debug;
 mod descriptor;
 mod device;
 mod encoder;
 mod framebuffer;
 mod image;
+mod instance;
 mod physical_device;
 mod pipeline;
 mod queue;
@@ -49,7 +51,7 @@ fn setup(
         .unwrap();
 
     let winit_window = winit_windows.get_window(window_id).unwrap();
-    let mut renderer = Renderer::new(winit_window);
+    let renderer = Renderer::new(winit_window);
 
     commands.insert_resource(renderer);
 }

@@ -151,4 +151,8 @@ impl Device {
     pub fn create_swapchain(&self, surface: &Surface) -> Swapchain {
         Swapchain::new(self, surface)
     }
+
+    pub fn cleanup(&mut self) {
+        unsafe { self.inner.handle.destroy_device(None) }
+    }
 }
