@@ -21,6 +21,9 @@ pub struct PhysicalDeviceInfo {
     pub accel_properties: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
 }
 
+unsafe impl Send for PhysicalDeviceInfo {}
+unsafe impl Sync for PhysicalDeviceInfo {}
+
 impl PhysicalDevice {
     pub fn select_one(
         instance: &InstanceLoader,

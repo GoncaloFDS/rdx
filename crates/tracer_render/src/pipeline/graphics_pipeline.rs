@@ -2,10 +2,11 @@ use crate::resources::{PipelineLayout, RenderPass};
 use crate::shader::Shader;
 use erupt::vk;
 
+#[derive(Clone)]
 pub struct GraphicsPipelineInfo {
     pub vertex_bindings: Vec<VertexInputBinding>,
     pub vertex_attributes: Vec<VertexInputAttribute>,
-    pub primitive_topology: Vec<vk::PrimitiveTopology>,
+    pub primitive_topology: vk::PrimitiveTopology,
     pub vertex_shader: Shader,
     pub rasterizer: Option<Rasterizer>,
     pub layout: PipelineLayout,
@@ -13,16 +14,13 @@ pub struct GraphicsPipelineInfo {
     pub subpass: u32,
 }
 
+#[derive(Clone)]
 pub struct VertexInputBinding {
-    pub rate: VertexInputRate,
+    pub input_rate: vk::VertexInputRate,
     pub stride: u32,
 }
 
-pub enum VertexInputRate {
-    Vertex,
-    Instance,
-}
-
+#[derive(Clone)]
 pub struct VertexInputAttribute {
     pub location: u32,
     pub format: vk::Format,
@@ -30,17 +28,13 @@ pub struct VertexInputAttribute {
     pub offset: u32,
 }
 
+#[derive(Clone)]
 pub struct Rasterizer {
     pub viewport: vk::Viewport,
-    pub scissor: vk::Rect2D,
     pub depth_clamp: bool,
     pub front_face: vk::FrontFace,
-    pub culling: vk::CullModeFlags,
+    pub cull_mode: vk::CullModeFlags,
     pub polygon_mode: vk::PolygonMode,
 
-    // pub depth_test: Option<DepthTest>,
-    // pub stencil_tests: Option<StencilTests>,
-    // pub depth_bounds: Option<Bounds>,
-    // pub color_blend: ColorBlend,
     pub fragment_shader: Option<Shader>,
 }

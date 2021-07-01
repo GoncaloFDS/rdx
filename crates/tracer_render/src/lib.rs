@@ -35,6 +35,7 @@ impl Plugin for RenderPlugin {
     fn build(&self, app: &mut AppBuilder) {
         app.add_startup_system_to_stage(StartupStage::PreStartup, setup.system())
             .add_system_to_stage(CoreStage::PreUpdate, window_resize.system())
+            .add_system_to_stage(CoreStage::Update, draw.system())
             .add_system_to_stage(CoreStage::Last, world_cleanup.system());
     }
 }
@@ -54,6 +55,10 @@ fn setup(
     let renderer = Renderer::new(winit_window);
 
     commands.insert_resource(renderer);
+}
+
+fn draw(mut renderer: ResMut<Renderer>) {
+    renderer.draw()
 }
 
 fn window_resize(mut window_resized_event: EventReader<WindowResized>) {

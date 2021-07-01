@@ -3,7 +3,7 @@ use erupt::vk;
 use std::ops::Range;
 
 pub struct ImageInfo {
-    pub extent: vk::Extent3D,
+    pub extent: vk::Extent2D,
     pub format: vk::Format,
     pub levels: u32,
     pub layers: u32,
@@ -11,6 +11,7 @@ pub struct ImageInfo {
     pub usage: vk::ImageUsageFlags,
 }
 
+#[derive(Clone)]
 pub struct ImageSubresourceRange {
     pub aspect: vk::ImageAspectFlags,
     pub first_level: u32,
@@ -63,6 +64,7 @@ pub struct ImageMemoryBarrier<'a> {
     pub subresource: ImageSubresourceRange,
 }
 
+#[derive(Clone)]
 pub struct ImageViewInfo {
     pub view_type: vk::ImageViewType,
     pub subresource: ImageSubresourceRange,

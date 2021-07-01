@@ -23,6 +23,7 @@ impl BufferInfo {
     }
 }
 
+#[derive(Clone)]
 pub struct BufferRegion {
     pub buffer: Buffer,
     pub offset: u64,

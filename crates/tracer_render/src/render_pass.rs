@@ -4,12 +4,13 @@ use smallvec::SmallVec;
 pub const RENDERPASS_SMALLVEC_ATTACHMENTS: usize = 8;
 pub const SMALLVEC_SUBPASSES: usize = 4;
 
+#[derive(Clone)]
 pub struct RenderPassInfo {
     pub attachments: SmallVec<[AttachmentInfo; RENDERPASS_SMALLVEC_ATTACHMENTS]>,
     pub subpasses: SmallVec<[Subpass; SMALLVEC_SUBPASSES]>,
-    pub dependencies: SmallVec<[SubpassDependency; SMALLVEC_SUBPASSES]>,
 }
 
+#[derive(Clone)]
 pub struct AttachmentInfo {
     pub format: vk::Format,
     pub samples: vk::SampleCountFlags,
@@ -19,11 +20,13 @@ pub struct AttachmentInfo {
     pub final_layout: vk::ImageLayout,
 }
 
+#[derive(Clone)]
 pub struct Subpass {
     pub colors: SmallVec<[usize; RENDERPASS_SMALLVEC_ATTACHMENTS]>,
     pub depth: Option<usize>,
 }
 
+#[derive(Clone)]
 pub struct SubpassDependency {
     pub src: Option<usize>,
     pub dst: Option<usize>,

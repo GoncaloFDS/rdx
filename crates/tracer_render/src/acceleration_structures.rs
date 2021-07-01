@@ -4,22 +4,26 @@ use crevice::internal::bytemuck;
 use erupt::vk;
 use glam::Mat4;
 
+#[derive(Clone)]
 pub struct AccelerationStructureInfo {
     pub level: AccelerationStructureLevel,
     pub region: BufferRegion,
 }
 
+#[derive(Clone)]
 pub struct AccelerationStructureBuildSizesInfo {
     pub acceleration_structure_size: u64,
     pub update_scratch_size: u64,
     pub build_scratch_size: u64,
 }
 
+#[derive(Clone)]
 pub enum AccelerationStructureLevel {
     Bottom,
     Top,
 }
 
+#[derive(Clone)]
 pub enum AccelerationStructureGeometryInfo {
     Triangles {
         max_primitive_count: u32,
@@ -28,6 +32,7 @@ pub enum AccelerationStructureGeometryInfo {
     },
 }
 
+#[derive(Clone)]
 pub struct AccelerationStructureBuildGeometryInfo<'a> {
     pub src: Option<AccelerationStructure>,
     pub dst: AccelerationStructure,

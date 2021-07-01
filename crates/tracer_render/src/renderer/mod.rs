@@ -8,11 +8,19 @@ use erupt::{vk, EntryLoader, InstanceLoader};
 use std::sync::Arc;
 use winit::window::Window;
 
+pub use self::pass::*;
+use crate::pipeline::{Pipeline, RasterPipeline};
+use parking_lot::Mutex;
+
+mod pass;
+
 pub struct Renderer {
     surface: Surface,
     swapchain: Swapchain,
     debug_messenger: DebugMessenger,
+    physical_device: PhysicalDevice,
     render_context: RenderContext,
+    pipeline: RasterPipeline,
     instance: Arc<InstanceLoader>,
     entry: EntryLoader,
 }
@@ -33,19 +41,48 @@ impl Renderer {
         ];
         let physical_device = PhysicalDevice::select_one(&instance, &surface, &device_extensions);
         let (device, queue) = physical_device.create_device(instance.clone(), &device_extensions);
-        let render_context = RenderContext::new(device, queue);
+        let mut render_context = RenderContext::new(device, queue);
 
         let mut swapchain = render_context.create_swapchain(&surface);
         swapchain.configure(&render_context.device, physical_device.info());
+
+        let pipeline = RasterPipeline::new(&render_context);
 
         Renderer {
             surface,
             swapchain,
             debug_messenger,
+            physical_device,
             render_context,
+            pipeline,
             instance,
             entry,
         }
+    }
+
+    pub fn draw(&mut self) {
+        tracing::debug!("rendering next frame");
+
+        let frame = loop {
+            if let Some(frame) = self
+                .swapchain
+                .acquire_next_image(&self.render_context.device)
+            {
+                break frame;
+            }
+            self.swapchain
+                .configure(&self.render_context.device, self.physical_device.info());
+        };
+
+        self.pipeline.draw(
+            frame.info().image.clone(),
+            &frame.info().wait,
+            &frame.info().signal,
+            &mut self.render_context,
+        );
+
+        tracing::debug!("presenting frame");
+        self.render_context.queue.present(frame);
     }
 }
 

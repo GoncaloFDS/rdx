@@ -1,6 +1,8 @@
 use crate::device::Device;
 use crate::encoder::Encoder;
+use crate::swapchain::SwapchainImage;
 use erupt::vk;
+use erupt::vk::PresentInfoKHRBuilder;
 
 pub struct Queue {
     handle: vk::Queue,
@@ -23,6 +25,21 @@ impl Queue {
 
     pub fn submit(&self) {
         todo!()
+    }
+
+    pub fn present(&mut self, image: SwapchainImage) {
+        unsafe {
+            self.device
+                .handle()
+                .queue_present_khr(
+                    self.handle,
+                    &PresentInfoKHRBuilder::new()
+                        .wait_semaphores(&[image.info().signal.handle()])
+                        .swapchains(&[image.handle()])
+                        .image_indices(&[image.index()]),
+                )
+                .unwrap();
+        }
     }
 }
 

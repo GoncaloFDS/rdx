@@ -2,9 +2,11 @@ use crate::resources::{
     AccelerationStructure, Buffer, DescriptorSet, DescriptorSetLayout, ImageView, Sampler,
 };
 use erupt::vk;
+use std::ops::Deref;
 
 const DESCRIPTOR_TYPES_COUNT: usize = 12;
 
+#[derive(Clone)]
 pub struct DescriptorSetInfo {
     pub layout: DescriptorSetLayout,
 }
@@ -39,99 +41,37 @@ pub struct CopyDescriptorSet<'a> {
     pub count: u32,
 }
 
+#[derive(Clone)]
 pub struct DescriptorSetLayoutInfo {
     pub bindings: Vec<DescriptorSetLayoutBinding>,
     pub flags: vk::DescriptorSetLayoutCreateFlags,
 }
 
+#[derive(Clone)]
 pub struct DescriptorSetLayoutBinding {
     pub binding: u32,
-    pub descriptor_type: DescriptorType,
+    pub descriptor_type: vk::DescriptorType,
     pub count: u32,
     pub stages: vk::ShaderStageFlags,
     pub flags: vk::DescriptorBindingFlags,
-}
-
-#[derive(Copy, Clone)]
-pub enum DescriptorType {
-    Sampler,
-    CombinedImageSampler,
-    SampledImage,
-    StorageImage,
-    UniformTexelBuffer,
-    StorageTexelBuffer,
-    UniformBuffer,
-    StorageBuffer,
-    UniformBufferDynamic,
-    StorageBufferDynamic,
-    InputAttachment,
-    AccelerationStructure,
 }
 
 fn descriptor_type_from_index(index: usize) -> vk::DescriptorType {
     debug_assert!(index < DESCRIPTOR_TYPES_COUNT);
 
     match index {
-        0 => {
-            debug_assert_eq!(DescriptorType::Sampler as usize, index);
-
-            vk::DescriptorType::SAMPLER
-        }
-        1 => {
-            debug_assert_eq!(DescriptorType::CombinedImageSampler as usize, index);
-
-            vk::DescriptorType::COMBINED_IMAGE_SAMPLER
-        }
-        2 => {
-            debug_assert_eq!(DescriptorType::SampledImage as usize, index);
-
-            vk::DescriptorType::SAMPLED_IMAGE
-        }
-        3 => {
-            debug_assert_eq!(DescriptorType::StorageImage as usize, index);
-
-            vk::DescriptorType::STORAGE_IMAGE
-        }
-        4 => {
-            debug_assert_eq!(DescriptorType::UniformTexelBuffer as usize, index);
-
-            vk::DescriptorType::UNIFORM_TEXEL_BUFFER
-        }
-        5 => {
-            debug_assert_eq!(DescriptorType::StorageTexelBuffer as usize, index);
-
-            vk::DescriptorType::STORAGE_TEXEL_BUFFER
-        }
-        6 => {
-            debug_assert_eq!(DescriptorType::UniformBuffer as usize, index);
-
-            vk::DescriptorType::UNIFORM_BUFFER
-        }
-        7 => {
-            debug_assert_eq!(DescriptorType::StorageBuffer as usize, index);
-
-            vk::DescriptorType::STORAGE_BUFFER
-        }
-        8 => {
-            debug_assert_eq!(DescriptorType::UniformBufferDynamic as usize, index);
-
-            vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC
-        }
-        9 => {
-            debug_assert_eq!(DescriptorType::StorageBufferDynamic as usize, index);
-
-            vk::DescriptorType::STORAGE_BUFFER_DYNAMIC
-        }
-        10 => {
-            debug_assert_eq!(DescriptorType::InputAttachment as usize, index);
-
-            vk::DescriptorType::INPUT_ATTACHMENT
-        }
-        11 => {
-            debug_assert_eq!(DescriptorType::AccelerationStructure as usize, index);
-
-            vk::DescriptorType::ACCELERATION_STRUCTURE_KHR
-        }
+        0 => vk::DescriptorType::SAMPLER,
+        1 => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        2 => vk::DescriptorType::SAMPLED_IMAGE,
+        3 => vk::DescriptorType::STORAGE_IMAGE,
+        4 => vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
+        5 => vk::DescriptorType::STORAGE_TEXEL_BUFFER,
+        6 => vk::DescriptorType::UNIFORM_BUFFER,
+        7 => vk::DescriptorType::STORAGE_BUFFER,
+        8 => vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+        9 => vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
+        10 => vk::DescriptorType::INPUT_ATTACHMENT,
+        11 => vk::DescriptorType::ACCELERATION_STRUCTURE_KHR,
         _ => unreachable!(),
     }
 }
@@ -149,7 +89,7 @@ impl DescriptorSizesBuilder {
     }
 
     pub fn add_binding(&mut self, binding: &DescriptorSetLayoutBinding) {
-        self.sizes[binding.descriptor_type as usize] += binding.count;
+        self.sizes[binding.descriptor_type.0 as usize] += binding.count;
     }
 
     pub fn from_bindings(bindings: &[DescriptorSetLayoutBinding]) -> Self {
@@ -188,4 +128,22 @@ impl DescriptorSizesBuilder {
 pub struct DescriptorSizes {
     sizes: [vk::DescriptorPoolSizeBuilder<'static>; DESCRIPTOR_TYPES_COUNT],
     count: u8,
+}
+
+impl DescriptorSizes {
+    pub fn as_slice(&self) -> &[vk::DescriptorPoolSizeBuilder<'static>] {
+        &self.sizes[..self.count.into()]
+    }
+
+    pub fn from_bindings(bindings: &[DescriptorSetLayoutBinding]) -> Self {
+        DescriptorSizesBuilder::from_bindings(bindings).build()
+    }
+}
+
+impl Deref for DescriptorSizes {
+    type Target = [vk::DescriptorPoolSizeBuilder<'static>];
+
+    fn deref(&self) -> &[vk::DescriptorPoolSizeBuilder<'static>] {
+        self.as_slice()
+    }
 }

@@ -2,6 +2,7 @@ use crate::buffer::BufferRegion;
 use crate::shader::Shader;
 use erupt::vk::PipelineLayout;
 
+#[derive(Clone)]
 pub struct RayTracingPipelineInfo {
     pub shaders: Vec<Shader>,
     pub groups: Vec<RayTracingShaderGroupInfo>,
@@ -9,6 +10,7 @@ pub struct RayTracingPipelineInfo {
     pub layout: PipelineLayout,
 }
 
+#[derive(Clone)]
 pub enum RayTracingShaderGroupInfo {
     Raygen {
         raygen: u32,
@@ -22,6 +24,7 @@ pub enum RayTracingShaderGroupInfo {
     },
 }
 
+#[derive(Clone)]
 pub struct ShaderBindingTableInfo<'a> {
     pub raygen: Option<u32>,
     pub miss: &'a [u32],

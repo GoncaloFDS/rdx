@@ -3,6 +3,7 @@ use crate::resources::{ImageView, RenderPass};
 use erupt::vk;
 use smallvec::SmallVec;
 
+#[derive(Clone)]
 pub struct FramebufferInfo {
     pub render_pass: RenderPass,
     pub views: SmallVec<[ImageView; RENDERPASS_SMALLVEC_ATTACHMENTS]>,
