@@ -1,7 +1,8 @@
 use crate::pipeline::Pipeline;
 use crate::render_context::RenderContext;
-use crate::renderer::{Pass, RasterPass};
+use crate::renderer::{raster_pass, Pass, RasterPass};
 use crate::resources::{Fence, Image, Semaphore};
+use erupt::vk;
 
 pub struct RasterPipeline {
     raster_pass: RasterPass,
@@ -27,7 +28,25 @@ impl Pipeline for RasterPipeline {
         target_signal: &Semaphore,
         render_context: &mut RenderContext,
     ) {
-        self.raster_pass
-            .draw((), self.frame, &[], &[], render_context)
+        let fence = &self.fences[(self.frame % 2) as usize];
+        if self.frame > 1 {
+            render_context.wait_fences(&[fence], true);
+            render_context.reset_fences(&[fence]);
+        }
+        self.raster_pass.draw(
+            raster_pass::Input {
+                target: target.clone(),
+            },
+            self.frame,
+            &[(
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                target_wait.clone(),
+            )],
+            &[target_signal.clone()],
+            Some(fence),
+            render_context,
+        );
+
+        self.frame += 1;
     }
 }

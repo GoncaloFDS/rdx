@@ -21,6 +21,8 @@ impl RenderContext {
     }
 
     pub fn destroy_context(&mut self) {
+        self.device.wait_idle();
+        self.queue.cleanup(&self.device);
         self.device.cleanup();
     }
 }

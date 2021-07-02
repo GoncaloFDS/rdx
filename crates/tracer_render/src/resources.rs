@@ -146,6 +146,20 @@ pub struct ImageView {
     handle: vk::ImageView,
 }
 
+impl ImageView {
+    pub fn new(info: ImageViewInfo, handle: vk::ImageView) -> ImageView {
+        ImageView { info, handle }
+    }
+
+    pub fn info(&self) -> &ImageViewInfo {
+        &self.info
+    }
+
+    pub fn handle(&self) -> vk::ImageView {
+        self.handle
+    }
+}
+
 #[derive(Clone)]
 pub struct Fence {
     handle: vk::Fence,
@@ -154,6 +168,9 @@ pub struct Fence {
 impl Fence {
     pub fn new(handle: vk::Fence) -> Self {
         Fence { handle }
+    }
+    pub fn handle(&self) -> vk::Fence {
+        self.handle
     }
 }
 
@@ -197,6 +214,20 @@ pub struct Sampler {
 pub struct Framebuffer {
     info: FramebufferInfo,
     handle: vk::Framebuffer,
+}
+
+impl Framebuffer {
+    pub fn new(info: FramebufferInfo, handle: vk::Framebuffer) -> Self {
+        Framebuffer { info, handle }
+    }
+
+    pub fn info(&self) -> &FramebufferInfo {
+        &self.info
+    }
+
+    pub fn handle(&self) -> vk::Framebuffer {
+        self.handle
+    }
 }
 
 #[derive(Clone)]

@@ -61,28 +61,25 @@ impl Renderer {
     }
 
     pub fn draw(&mut self) {
-        tracing::debug!("rendering next frame");
-
-        let frame = loop {
-            if let Some(frame) = self
+        let swapchain_image = loop {
+            if let Some(swapchain_image) = self
                 .swapchain
                 .acquire_next_image(&self.render_context.device)
             {
-                break frame;
+                break swapchain_image;
             }
             self.swapchain
                 .configure(&self.render_context.device, self.physical_device.info());
         };
 
         self.pipeline.draw(
-            frame.info().image.clone(),
-            &frame.info().wait,
-            &frame.info().signal,
+            swapchain_image.info().image.clone(),
+            &swapchain_image.info().wait,
+            &swapchain_image.info().signal,
             &mut self.render_context,
         );
 
-        tracing::debug!("presenting frame");
-        self.render_context.queue.present(frame);
+        self.render_context.queue.present(swapchain_image);
     }
 }
 

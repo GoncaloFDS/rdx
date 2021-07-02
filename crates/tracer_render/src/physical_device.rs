@@ -209,7 +209,7 @@ impl PhysicalDevice {
         let device = Device::new(instance.clone(), device, self.handle);
 
         let queue = unsafe { device.handle().get_device_queue(self.info.queue_index, 0) };
-        let queue = Queue::new(queue, device.clone());
+        let queue = Queue::new(queue, device.clone(), self.info.queue_index);
 
         (device, queue)
     }

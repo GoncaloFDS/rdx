@@ -1,10 +1,12 @@
 use crate::buffer::BufferInfo;
 use crate::descriptor::{DescriptorSetInfo, DescriptorSetLayoutInfo, DescriptorSizes};
+use crate::framebuffer::FramebufferInfo;
+use crate::image::ImageViewInfo;
 use crate::pipeline::{GraphicsPipelineInfo, PipelineLayoutInfo};
 use crate::render_pass::RenderPassInfo;
 use crate::resources::{
-    Buffer, DescriptorSet, DescriptorSetLayout, Fence, GraphicsPipeline, MappableBuffer,
-    PipelineLayout, RenderPass, Semaphore, ShaderModule,
+    Buffer, DescriptorSet, DescriptorSetLayout, Fence, Framebuffer, GraphicsPipeline, ImageView,
+    MappableBuffer, PipelineLayout, RenderPass, Semaphore, ShaderModule,
 };
 use crate::shader::{ShaderLanguage, ShaderModuleInfo};
 use crate::surface::Surface;
@@ -237,6 +239,32 @@ impl Device {
         self.inner.fences.lock().insert(fence);
 
         Fence::new(fence)
+    }
+
+    pub fn reset_fences(&self, fences: &[&Fence]) {
+        let fences = fences
+            .iter()
+            .map(|fence| fence.handle())
+            .collect::<SmallVec<[_; 16]>>();
+        unsafe {
+            self.handle().reset_fences(&fences).unwrap();
+        }
+    }
+
+    pub fn wait_fences(&self, fences: &[&Fence], wait_all: bool) {
+        let fences = fences
+            .iter()
+            .map(|fence| fence.handle())
+            .collect::<SmallVec<[_; 16]>>();
+        unsafe {
+            self.handle()
+                .wait_for_fences(&fences, wait_all, !0)
+                .unwrap();
+        }
+    }
+
+    pub fn wait_idle(&self) {
+        unsafe { self.handle().device_wait_idle().unwrap() }
     }
 
     pub fn create_descriptor_set_layout(
@@ -572,5 +600,60 @@ impl Device {
         self.inner.pipelines.lock().insert(pipeline);
 
         GraphicsPipeline::new(info, pipeline)
+    }
+
+    pub fn create_image_view(&self, info: ImageViewInfo) -> ImageView {
+        let view = unsafe {
+            self.handle()
+                .create_image_view(
+                    &vk::ImageViewCreateInfoBuilder::new()
+                        .image(info.image.handle())
+                        .format(info.image.info().format)
+                        .view_type(info.view_type)
+                        .subresource_range(
+                            vk::ImageSubresourceRangeBuilder::new()
+                                .aspect_mask(info.subresource.aspect)
+                                .base_mip_level(info.subresource.first_level)
+                                .level_count(info.subresource.level_count)
+                                .base_array_layer(info.subresource.first_layer)
+                                .layer_count(info.subresource.layer_count)
+                                .build(),
+                        ),
+                    None,
+                )
+                .unwrap()
+        };
+
+        self.inner.image_views.lock().insert(view);
+
+        ImageView::new(info, view)
+    }
+
+    pub fn create_framebuffer(&self, info: FramebufferInfo) -> Framebuffer {
+        let render_pass = info.render_pass.handle();
+
+        let attachments = info
+            .views
+            .iter()
+            .map(|view| view.handle())
+            .collect::<SmallVec<[_; 16]>>();
+
+        let framebuffer = unsafe {
+            self.handle()
+                .create_framebuffer(
+                    &vk::FramebufferCreateInfoBuilder::new()
+                        .render_pass(render_pass)
+                        .attachments(&attachments)
+                        .width(info.extent.width)
+                        .height(info.extent.height)
+                        .layers(1),
+                    None,
+                )
+                .unwrap()
+        };
+
+        self.inner.framebuffers.lock().insert(framebuffer);
+
+        Framebuffer::new(info, framebuffer)
     }
 }
