@@ -84,15 +84,32 @@ impl<'a> EncoderInner<'a> {
         self.commands.push(Command::EndRenderPass)
     }
 
-    pub fn bind_ray_tracing_pipeline(&mut self, pipeline: &'a RayTracingPipeline) {
+    pub fn bind_graphics_pipeline(&mut self, pipeline: &'a GraphicsPipeline) {
         self.commands
-            .push(Command::BindRayTracingPipeline { pipeline })
+            .push(Command::BindGraphicsPipeline { pipeline })
     }
 
-    pub fn trace_rays(&mut self, shader_binding_table: &'a ShaderBindingTable) {
-        self.commands.push(Command::TraceRays {
-            shader_binding_table,
+    pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
+        self.commands.push(Command::Draw {
+            vertices,
+            instances,
         })
+    }
+
+    pub fn draw_indexed(&mut self, indices: Range<u32>, vertex_offset: i32, instances: Range<u32>) {
+        self.commands.push(Command::DrawIndexed {
+            indices,
+            vertex_offset,
+            instances,
+        });
+    }
+
+    pub fn set_viewport(&mut self, viewport: vk::Viewport) {
+        self.commands.push(Command::SetViewport { viewport })
+    }
+
+    pub fn set_scissor(&mut self, scissor: vk::Rect2D) {
+        self.commands.push(Command::SetScissor { scissor })
     }
 }
 
@@ -124,6 +141,14 @@ pub enum Command<'a> {
         first_set: u32,
         descriptor_sets: &'a [DescriptorSet],
         dynamic_offsets: &'a [u32],
+    },
+
+    SetViewport {
+        viewport: vk::Viewport,
+    },
+
+    SetScissor {
+        scissor: vk::Rect2D,
     },
 
     Draw {

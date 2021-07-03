@@ -79,11 +79,34 @@ impl CommandBuffer {
                     )
                 },
                 Command::EndRenderPass => unsafe { device.cmd_end_render_pass(self.handle) },
-                Command::BindGraphicsPipeline { .. } => unimplemented!(),
+                Command::BindGraphicsPipeline { pipeline } => unsafe {
+                    device.cmd_bind_pipeline(
+                        self.handle,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline.handle(),
+                    )
+                },
                 Command::BindRayTracingPipeline { .. } => unimplemented!(),
                 Command::BindGraphicsDescriptorSets { .. } => unimplemented!(),
                 Command::BindRayTracingDescriptorSets { .. } => unimplemented!(),
-                Command::Draw { .. } => unimplemented!(),
+                Command::Draw {
+                    ref vertices,
+                    ref instances,
+                } => unsafe {
+                    device.cmd_draw(
+                        self.handle,
+                        vertices.end - vertices.start,
+                        instances.end - instances.start,
+                        vertices.start,
+                        instances.start,
+                    )
+                },
+                Command::SetViewport { viewport } => unsafe {
+                    device.cmd_set_viewport(self.handle, 0, &[viewport.into_builder()])
+                },
+                Command::SetScissor { scissor } => unsafe {
+                    device.cmd_set_scissor(self.handle, 0, &[scissor.into_builder()])
+                },
                 Command::DrawIndexed { .. } => unimplemented!(),
                 Command::UpdateBuffer { .. } => unimplemented!(),
                 Command::BindVertexBuffers { .. } => unimplemented!(),

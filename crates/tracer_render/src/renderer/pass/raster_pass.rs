@@ -1,12 +1,12 @@
 use crate::descriptor::{DescriptorSetInfo, DescriptorSetLayoutBinding, DescriptorSetLayoutInfo};
 use crate::framebuffer::FramebufferInfo;
-use crate::image::{ImageInfo, ImageViewInfo};
+use crate::image::{Image, ImageInfo, ImageViewInfo};
 use crate::pipeline::{GraphicsPipelineInfo, PipelineLayoutInfo, Rasterizer};
 use crate::render_context::RenderContext;
 use crate::render_pass::{AttachmentInfo, ClearValue, RenderPassInfo, Subpass};
 use crate::renderer::Pass;
 use crate::resources::{
-    Fence, Framebuffer, GraphicsPipeline, Image, PipelineLayout, RenderPass, Semaphore,
+    Fence, Framebuffer, GraphicsPipeline, PipelineLayout, RenderPass, Semaphore,
 };
 use crate::shader::{Shader, ShaderLanguage, ShaderModuleInfo};
 use erupt::vk;
@@ -77,10 +77,28 @@ impl Pass<'_> for RasterPass {
             &self.render_pass,
             framebuffer,
             &[
-                ClearValue::Color(0.5, 0.2, 0.2, 1.0),
+                ClearValue::Color(0.5, 0.2, 0.2, 0.0),
                 ClearValue::DepthStencil(1.0, 0),
             ],
         );
+
+        encoder.bind_graphics_pipeline(&self.graphics_pipeline);
+
+        encoder.set_viewport(vk::Viewport {
+            x: 0.0,
+            y: framebuffer.info().extent.height as f32,
+            width: framebuffer.info().extent.width as f32,
+            height: -(framebuffer.info().extent.height as f32),
+            min_depth: 0.0,
+            max_depth: 1.0,
+        });
+
+        encoder.set_scissor(vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: framebuffer.info().extent,
+        });
+
+        encoder.draw(0..3, 0..1);
 
         encoder.end_render_pass();
 
@@ -137,7 +155,7 @@ impl RasterPass {
                     format: vk::Format::D32_SFLOAT,
                     samples: vk::SampleCountFlags::_1,
                     load_op: vk::AttachmentLoadOp::CLEAR,
-                    store_op: vk::AttachmentStoreOp::STORE,
+                    store_op: vk::AttachmentStoreOp::DONT_CARE,
                     initial_layout: None,
                     final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
                 },
@@ -165,11 +183,11 @@ impl RasterPass {
                     width: extent.width as _,
                     height: extent.height as _,
                     min_depth: 0.0,
-                    max_depth: 100.0,
+                    max_depth: 1.0,
                 },
                 depth_clamp: false,
                 front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-                cull_mode: vk::CullModeFlags::BACK,
+                cull_mode: vk::CullModeFlags::NONE,
                 polygon_mode: vk::PolygonMode::FILL,
                 fragment_shader: Some(fragment_shader.clone()),
             }),

@@ -1,7 +1,7 @@
 use crate::device::Device;
-use crate::image::ImageInfo;
+use crate::image::{Image, ImageInfo};
 use crate::physical_device::PhysicalDeviceInfo;
-use crate::resources::{Image, Semaphore};
+use crate::resources::Semaphore;
 use crate::surface::Surface;
 use erupt::vk;
 

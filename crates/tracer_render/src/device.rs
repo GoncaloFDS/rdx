@@ -1,12 +1,12 @@
 use crate::buffer::BufferInfo;
 use crate::descriptor::{DescriptorSetInfo, DescriptorSetLayoutInfo, DescriptorSizes};
 use crate::framebuffer::FramebufferInfo;
-use crate::image::{ImageInfo, ImageViewInfo};
+use crate::image::{Image, ImageInfo, ImageView, ImageViewInfo};
 use crate::pipeline::{GraphicsPipelineInfo, PipelineLayoutInfo};
 use crate::render_pass::RenderPassInfo;
 use crate::resources::{
-    Buffer, DescriptorSet, DescriptorSetLayout, Fence, Framebuffer, GraphicsPipeline, Image,
-    ImageView, MappableBuffer, PipelineLayout, RenderPass, Semaphore, ShaderModule,
+    Buffer, DescriptorSet, DescriptorSetLayout, Fence, Framebuffer, GraphicsPipeline,
+    MappableBuffer, PipelineLayout, RenderPass, Semaphore, ShaderModule,
 };
 use crate::shader::{ShaderLanguage, ShaderModuleInfo};
 use crate::surface::Surface;
@@ -40,7 +40,7 @@ pub struct DeviceInner {
     pipelines: Mutex<Slab<vk::Pipeline>>,
     pipeline_layouts: Mutex<Slab<vk::PipelineLayout>>,
     render_passes: Mutex<Slab<vk::RenderPass>>,
-    shaders: Mutex<Slab<vk::ShaderModule>>,
+    shader_modules: Mutex<Slab<vk::ShaderModule>>,
     acceleration_structures: Mutex<Slab<vk::AccelerationStructureKHR>>,
 }
 
@@ -78,7 +78,7 @@ impl Device {
                 pipelines: Mutex::new(Slab::with_capacity(1024)),
                 pipeline_layouts: Mutex::new(Slab::with_capacity(1024)),
                 render_passes: Mutex::new(Slab::with_capacity(1024)),
-                shaders: Mutex::new(Slab::with_capacity(1024)),
+                shader_modules: Mutex::new(Slab::with_capacity(1024)),
                 acceleration_structures: Mutex::new(Slab::with_capacity(1024)),
             }),
         }
@@ -88,6 +88,52 @@ impl Device {
         let device = self.handle();
 
         unsafe {
+            self.inner
+                .framebuffers
+                .lock()
+                .iter()
+                .for_each(|(_, &framebuffer)| device.destroy_framebuffer(Some(framebuffer), None));
+
+            self.inner
+                .pipeline_layouts
+                .lock()
+                .iter()
+                .for_each(|(_, &pipeline_layout)| {
+                    device.destroy_pipeline_layout(Some(pipeline_layout), None)
+                });
+
+            self.inner
+                .pipelines
+                .lock()
+                .iter()
+                .for_each(|(_, &pipeline)| device.destroy_pipeline(Some(pipeline), None));
+
+            self.inner
+                .render_passes
+                .lock()
+                .iter()
+                .for_each(|(_, &render_pass)| device.destroy_render_pass(Some(render_pass), None));
+
+            self.inner
+                .shader_modules
+                .lock()
+                .iter()
+                .for_each(|(_, &shader_module)| {
+                    device.destroy_shader_module(Some(shader_module), None)
+                });
+
+            self.inner
+                .image_views
+                .lock()
+                .iter()
+                .for_each(|(_, &view)| device.destroy_image_view(Some(view), None));
+
+            self.inner
+                .images
+                .lock()
+                .iter()
+                .for_each(|(_, &image)| device.destroy_image(Some(image), None));
+
             self.inner
                 .swapchains
                 .lock()
@@ -391,7 +437,7 @@ impl Device {
                 .unwrap()
         };
 
-        self.inner.shaders.lock().insert(module);
+        self.inner.shader_modules.lock().insert(module);
 
         ShaderModule::new(info, module)
     }
@@ -545,6 +591,7 @@ impl Device {
                 .polygon_mode(rasterizer.polygon_mode)
                 .cull_mode(rasterizer.cull_mode)
                 .front_face(rasterizer.front_face)
+                .depth_bias_enable(false)
                 .line_width(1.0);
             let stencil_op = vk::StencilOpStateBuilder::new()
                 .fail_op(vk::StencilOp::KEEP)
@@ -570,6 +617,15 @@ impl Device {
                 .attachments(&color_blend_attachments);
             multisample_info = vk::PipelineMultisampleStateCreateInfoBuilder::new()
                 .rasterization_samples(vk::SampleCountFlagBits::_1);
+
+            if let Some(fragment_shader) = &rasterizer.fragment_shader {
+                shader_stages.push(
+                    vk::PipelineShaderStageCreateInfoBuilder::new()
+                        .stage(vk::ShaderStageFlagBits::FRAGMENT)
+                        .module(fragment_shader.module.handle())
+                        .name(&shader_entry_point),
+                )
+            }
 
             vk::GraphicsPipelineCreateInfoBuilder::new()
                 .stages(&shader_stages)
@@ -647,9 +703,12 @@ impl Device {
                 .unwrap()
         };
 
+        self.inner.images.lock().insert(image);
+
         unsafe {
             self.handle()
-                .bind_image_memory(image, *memory_block.memory(), memory_block.offset());
+                .bind_image_memory(image, *memory_block.memory(), memory_block.offset())
+                .unwrap();
         }
 
         Image::new(info, image, Some(memory_block))

@@ -89,77 +89,6 @@ impl MappableBuffer {
     }
 }
 
-struct ImageInner {
-    info: ImageInfo,
-    handle: vk::Image,
-    memory_block: Option<MemoryBlock<vk::DeviceMemory>>,
-}
-
-#[derive(Clone)]
-pub struct Image {
-    inner: Arc<ImageInner>,
-}
-
-impl PartialEq for Image {
-    fn eq(&self, rhs: &Self) -> bool {
-        self.inner.handle == rhs.inner.handle
-    }
-}
-
-impl Eq for Image {}
-
-impl Hash for Image {
-    fn hash<H>(&self, hasher: &mut H)
-    where
-        H: Hasher,
-    {
-        self.inner.handle.hash(hasher)
-    }
-}
-
-impl Image {
-    pub fn new(
-        info: ImageInfo,
-        handle: vk::Image,
-        memory_block: Option<MemoryBlock<vk::DeviceMemory>>,
-    ) -> Self {
-        Image {
-            inner: Arc::new(ImageInner {
-                info,
-                handle,
-                memory_block,
-            }),
-        }
-    }
-    pub fn info(&self) -> &ImageInfo {
-        &self.inner.info
-    }
-
-    pub fn handle(&self) -> vk::Image {
-        self.inner.handle
-    }
-}
-
-#[derive(Clone)]
-pub struct ImageView {
-    info: ImageViewInfo,
-    handle: vk::ImageView,
-}
-
-impl ImageView {
-    pub fn new(info: ImageViewInfo, handle: vk::ImageView) -> ImageView {
-        ImageView { info, handle }
-    }
-
-    pub fn info(&self) -> &ImageViewInfo {
-        &self.info
-    }
-
-    pub fn handle(&self) -> vk::ImageView {
-        self.handle
-    }
-}
-
 #[derive(Clone)]
 pub struct Fence {
     handle: vk::Fence,
@@ -335,6 +264,14 @@ pub struct GraphicsPipeline {
 impl GraphicsPipeline {
     pub fn new(info: GraphicsPipelineInfo, handle: vk::Pipeline) -> Self {
         GraphicsPipeline { info, handle }
+    }
+
+    pub fn info(&self) -> &GraphicsPipelineInfo {
+        &self.info
+    }
+
+    pub fn handle(&self) -> vk::Pipeline {
+        self.handle
     }
 }
 

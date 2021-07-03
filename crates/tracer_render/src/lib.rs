@@ -26,7 +26,6 @@ mod shader;
 mod surface;
 mod swapchain;
 mod util;
-mod vertex;
 
 #[derive(Default)]
 pub struct RenderPlugin;

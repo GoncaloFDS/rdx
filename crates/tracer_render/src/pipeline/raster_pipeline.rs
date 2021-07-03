@@ -1,7 +1,8 @@
+use crate::image::Image;
 use crate::pipeline::Pipeline;
 use crate::render_context::RenderContext;
 use crate::renderer::{raster_pass, Pass, RasterPass};
-use crate::resources::{Fence, Image, Semaphore};
+use crate::resources::{Fence, Semaphore};
 use erupt::vk;
 use erupt::vk1_0::{Extent2D, Format};
 

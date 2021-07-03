@@ -1,5 +1,6 @@
+use crate::image::ImageView;
 use crate::resources::{
-    AccelerationStructure, Buffer, DescriptorSet, DescriptorSetLayout, ImageView, Sampler,
+    AccelerationStructure, Buffer, DescriptorSet, DescriptorSetLayout, Sampler,
 };
 use erupt::vk;
 use std::ops::Deref;
