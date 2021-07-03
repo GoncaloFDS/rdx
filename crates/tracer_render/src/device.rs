@@ -1,12 +1,12 @@
 use crate::buffer::BufferInfo;
 use crate::descriptor::{DescriptorSetInfo, DescriptorSetLayoutInfo, DescriptorSizes};
 use crate::framebuffer::FramebufferInfo;
-use crate::image::ImageViewInfo;
+use crate::image::{ImageInfo, ImageViewInfo};
 use crate::pipeline::{GraphicsPipelineInfo, PipelineLayoutInfo};
 use crate::render_pass::RenderPassInfo;
 use crate::resources::{
-    Buffer, DescriptorSet, DescriptorSetLayout, Fence, Framebuffer, GraphicsPipeline, ImageView,
-    MappableBuffer, PipelineLayout, RenderPass, Semaphore, ShaderModule,
+    Buffer, DescriptorSet, DescriptorSetLayout, Fence, Framebuffer, GraphicsPipeline, Image,
+    ImageView, MappableBuffer, PipelineLayout, RenderPass, Semaphore, ShaderModule,
 };
 use crate::shader::{ShaderLanguage, ShaderModuleInfo};
 use crate::surface::Surface;
@@ -120,6 +120,10 @@ impl Device {
 
     pub fn swapchains(&self) -> &Mutex<Slab<vk::SwapchainKHR>> {
         &self.inner.swapchains
+    }
+
+    fn allocator(&self) -> &Mutex<GpuAllocator<vk::DeviceMemory>> {
+        &self.inner.allocator
     }
 
     pub fn create_buffer(&self, info: BufferInfo, allocation_flags: UsageFlags) -> MappableBuffer {
@@ -602,6 +606,55 @@ impl Device {
         GraphicsPipeline::new(info, pipeline)
     }
 
+    pub fn create_image(&self, info: ImageInfo) -> Image {
+        let image = unsafe {
+            self.handle()
+                .create_image(
+                    &vk::ImageCreateInfoBuilder::new()
+                        .image_type(vk::ImageType::_2D)
+                        .format(info.format)
+                        .extent(vk::Extent3D {
+                            width: info.extent.width,
+                            height: info.extent.height,
+                            depth: 1,
+                        })
+                        .mip_levels(info.mip_levels)
+                        .array_layers(info.array_layers)
+                        .samples(info.samples)
+                        .tiling(vk::ImageTiling::OPTIMAL)
+                        .usage(info.usage)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                        .initial_layout(vk::ImageLayout::UNDEFINED),
+                    None,
+                )
+                .unwrap()
+        };
+
+        let memory_requirements = unsafe { self.handle().get_image_memory_requirements(image) };
+
+        let memory_block = unsafe {
+            self.allocator()
+                .lock()
+                .alloc(
+                    EruptMemoryDevice::wrap(self.handle()),
+                    gpu_alloc::Request {
+                        size: memory_requirements.size,
+                        align_mask: memory_requirements.alignment - 1,
+                        usage: get_allocator_memory_usage(&info.usage),
+                        memory_types: memory_requirements.memory_type_bits,
+                    },
+                )
+                .unwrap()
+        };
+
+        unsafe {
+            self.handle()
+                .bind_image_memory(image, *memory_block.memory(), memory_block.offset());
+        }
+
+        Image::new(info, image, Some(memory_block))
+    }
+
     pub fn create_image_view(&self, info: ImageViewInfo) -> ImageView {
         let view = unsafe {
             self.handle()
@@ -655,5 +708,13 @@ impl Device {
         self.inner.framebuffers.lock().insert(framebuffer);
 
         Framebuffer::new(info, framebuffer)
+    }
+}
+
+fn get_allocator_memory_usage(usage: &vk::ImageUsageFlags) -> UsageFlags {
+    if usage.contains(vk::ImageUsageFlags::TRANSIENT_ATTACHMENT) {
+        UsageFlags::TRANSIENT
+    } else {
+        UsageFlags::empty()
     }
 }

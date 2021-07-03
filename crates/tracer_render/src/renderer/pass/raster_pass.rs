@@ -1,6 +1,6 @@
 use crate::descriptor::{DescriptorSetInfo, DescriptorSetLayoutBinding, DescriptorSetLayoutInfo};
 use crate::framebuffer::FramebufferInfo;
-use crate::image::ImageViewInfo;
+use crate::image::{ImageInfo, ImageViewInfo};
 use crate::pipeline::{GraphicsPipelineInfo, PipelineLayoutInfo, Rasterizer};
 use crate::render_context::RenderContext;
 use crate::render_pass::{AttachmentInfo, ClearValue, RenderPassInfo, Subpass};
@@ -10,7 +10,7 @@ use crate::resources::{
 };
 use crate::shader::{Shader, ShaderLanguage, ShaderModuleInfo};
 use erupt::vk;
-use erupt::vk1_0::PipelineStageFlags;
+use erupt::vk1_0::{Extent2D, Format, PipelineStageFlags};
 use lru::LruCache;
 use smallvec::smallvec;
 
@@ -20,6 +20,8 @@ pub struct RasterPass {
     graphics_pipeline: GraphicsPipeline,
 
     framebuffers: LruCache<Image, Framebuffer>,
+
+    depth_image: Image,
 
     vertex_shader: Shader,
     fragment_shader: Shader,
@@ -47,14 +49,19 @@ impl Pass<'_> for RasterPass {
         let fb;
         let framebuffer = match self.framebuffers.get(&input.target) {
             None => {
-                let view = render_context.create_image_view(ImageViewInfo::new(
+                let color_view = render_context.create_image_view(ImageViewInfo::new(
                     input.target.clone(),
                     vk::ImageAspectFlags::COLOR,
                 ));
 
+                let depth_view = render_context.create_image_view(ImageViewInfo::new(
+                    self.depth_image.clone(),
+                    vk::ImageAspectFlags::DEPTH,
+                ));
+
                 fb = render_context.create_framebuffer(FramebufferInfo {
                     render_pass: self.render_pass.clone(),
-                    views: smallvec![view],
+                    views: smallvec![color_view, depth_view],
                     extent: input.target.info().extent,
                 });
 
@@ -69,7 +76,10 @@ impl Pass<'_> for RasterPass {
         encoder.begin_render_pass(
             &self.render_pass,
             framebuffer,
-            &[ClearValue::Color(0.8, 0.2, 0.2, 1.0)],
+            &[
+                ClearValue::Color(0.5, 0.2, 0.2, 1.0),
+                ClearValue::DepthStencil(1.0, 0),
+            ],
         );
 
         encoder.end_render_pass();
@@ -83,7 +93,11 @@ impl Pass<'_> for RasterPass {
 }
 
 impl RasterPass {
-    pub fn new(render_context: &RenderContext) -> Self {
+    pub fn new(
+        render_context: &RenderContext,
+        surface_format: vk::Format,
+        extent: vk::Extent2D,
+    ) -> Self {
         let vertex_shader = {
             let module = render_context.create_shader_module(ShaderModuleInfo::new(
                 "shader.vert.spv",
@@ -100,18 +114,37 @@ impl RasterPass {
             Shader::new(module, vk::ShaderStageFlags::FRAGMENT)
         };
 
+        let depth_image = render_context.create_image(ImageInfo {
+            extent,
+            format: vk::Format::D32_SFLOAT,
+            mip_levels: 1,
+            array_layers: 1,
+            samples: vk::SampleCountFlagBits::_1,
+            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+        });
+
         let render_pass = render_context.create_render_pass(RenderPassInfo {
-            attachments: smallvec![AttachmentInfo {
-                format: vk::Format::B8G8R8A8_SRGB,
-                samples: vk::SampleCountFlags::_1,
-                load_op: vk::AttachmentLoadOp::DONT_CARE,
-                store_op: vk::AttachmentStoreOp::STORE,
-                initial_layout: None,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR
-            }],
+            attachments: smallvec![
+                AttachmentInfo {
+                    format: surface_format,
+                    samples: vk::SampleCountFlags::_1,
+                    load_op: vk::AttachmentLoadOp::CLEAR,
+                    store_op: vk::AttachmentStoreOp::STORE,
+                    initial_layout: None,
+                    final_layout: vk::ImageLayout::PRESENT_SRC_KHR
+                },
+                AttachmentInfo {
+                    format: vk::Format::D32_SFLOAT,
+                    samples: vk::SampleCountFlags::_1,
+                    load_op: vk::AttachmentLoadOp::CLEAR,
+                    store_op: vk::AttachmentStoreOp::STORE,
+                    initial_layout: None,
+                    final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                },
+            ],
             subpasses: smallvec![Subpass {
                 colors: smallvec![0],
-                depth: None,
+                depth: Some(1),
             }],
         });
 
@@ -126,12 +159,14 @@ impl RasterPass {
             primitive_topology: vk::PrimitiveTopology::TRIANGLE_LIST,
             vertex_shader: vertex_shader.clone(),
             rasterizer: Some(Rasterizer {
-                viewport: vk::ViewportBuilder::new()
-                    .x(0.0)
-                    .y(0.0)
-                    .width(800.0)
-                    .height(600.0)
-                    .build(),
+                viewport: vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: extent.width as _,
+                    height: extent.height as _,
+                    min_depth: 0.0,
+                    max_depth: 100.0,
+                },
                 depth_clamp: false,
                 front_face: vk::FrontFace::COUNTER_CLOCKWISE,
                 cull_mode: vk::CullModeFlags::BACK,
@@ -148,6 +183,7 @@ impl RasterPass {
             pipeline_layout,
             graphics_pipeline,
             framebuffers: LruCache::new(4),
+            depth_image,
             vertex_shader,
             fragment_shader,
         }

@@ -203,6 +203,10 @@ impl RenderPass {
     pub fn handle(&self) -> vk::RenderPass {
         self.handle
     }
+
+    pub fn info(&self) -> &RenderPassInfo {
+        &self.info
+    }
 }
 
 #[derive(Clone)]

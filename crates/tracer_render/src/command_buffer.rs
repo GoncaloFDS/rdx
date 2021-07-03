@@ -1,6 +1,8 @@
 use crate::device::Device;
 use crate::encoder::Command;
+use crate::render_pass::{ClearValue, DEFAULT_ATTACHMENT_COUNT};
 use erupt::vk;
+use smallvec::SmallVec;
 
 pub struct CommandBuffer {
     handle: vk::CommandBuffer,
@@ -43,11 +45,26 @@ impl CommandBuffer {
                     framebuffer,
                     clears,
                 } => unsafe {
-                    let clear_values = [vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.5, 0.25, 0.25, 1.0],
-                        },
-                    }];
+                    let mut clears = clears.into_iter();
+                    let clear_values = render_pass
+                        .info()
+                        .attachments
+                        .iter()
+                        .map(|attachment| {
+                            let clear = clears.next().unwrap();
+                            match *clear {
+                                ClearValue::Color(r, g, b, a) => vk::ClearValue {
+                                    color: vk::ClearColorValue {
+                                        float32: [r, g, b, a],
+                                    },
+                                },
+                                ClearValue::DepthStencil(depth, stencil) => vk::ClearValue {
+                                    depth_stencil: vk::ClearDepthStencilValue { depth, stencil },
+                                },
+                            }
+                        })
+                        .collect::<SmallVec<[_; DEFAULT_ATTACHMENT_COUNT]>>();
+
                     device.cmd_begin_render_pass(
                         self.handle,
                         &vk::RenderPassBeginInfoBuilder::new()

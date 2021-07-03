@@ -67,12 +67,13 @@ impl Swapchain {
     }
 
     pub fn configure(&mut self, device: &Device, info: &PhysicalDeviceInfo) {
-        let old_swapchain = if let Some(inner) = self.inner.take() {
-            let handle = inner.handle;
-            self.retired.push(inner);
-            handle
-        } else {
-            vk::SwapchainKHR::null()
+        let old_swapchain = match self.inner.take() {
+            None => vk::SwapchainKHR::null(),
+            Some(inner) => {
+                let handle = inner.handle;
+                self.retired.push(inner);
+                handle
+            }
         };
 
         let swapchain = unsafe {
@@ -139,9 +140,9 @@ impl Swapchain {
                     ImageInfo {
                         extent: info.surface_capabilities.current_extent,
                         format: info.surface_format.format,
-                        levels: 1,
-                        layers: 1,
-                        samples: vk::SampleCountFlags::_1,
+                        mip_levels: 1,
+                        array_layers: 1,
+                        samples: vk::SampleCountFlagBits::_1,
                         usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
                     },
                     image,

@@ -3,6 +3,7 @@ use crate::render_context::RenderContext;
 use crate::renderer::{raster_pass, Pass, RasterPass};
 use crate::resources::{Fence, Image, Semaphore};
 use erupt::vk;
+use erupt::vk1_0::{Extent2D, Format};
 
 pub struct RasterPipeline {
     raster_pass: RasterPass,
@@ -11,9 +12,13 @@ pub struct RasterPipeline {
 }
 
 impl RasterPipeline {
-    pub fn new(render_context: &RenderContext) -> Self {
+    pub fn new(
+        render_context: &RenderContext,
+        surface_format: vk::Format,
+        extent: vk::Extent2D,
+    ) -> Self {
         RasterPipeline {
-            raster_pass: RasterPass::new(render_context),
+            raster_pass: RasterPass::new(render_context, surface_format, extent),
             frame: 0,
             fences: [render_context.create_fence(), render_context.create_fence()],
         }

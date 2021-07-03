@@ -46,7 +46,11 @@ impl Renderer {
         let mut swapchain = render_context.create_swapchain(&surface);
         swapchain.configure(&render_context.device, physical_device.info());
 
-        let pipeline = RasterPipeline::new(&render_context);
+        let pipeline = RasterPipeline::new(
+            &render_context,
+            physical_device.info().surface_format.format,
+            physical_device.info().surface_capabilities.current_extent,
+        );
 
         Renderer {
             surface,

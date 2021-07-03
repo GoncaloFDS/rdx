@@ -110,8 +110,8 @@ impl PhysicalDevice {
         let present_mode = present_mode
             .unwrap()
             .into_iter()
-            .find(|present_mode| present_mode == &vk::PresentModeKHR::MAILBOX_KHR)
-            .unwrap_or(vk::PresentModeKHR::FIFO_KHR);
+            .find(|present_mode| present_mode == &vk::PresentModeKHR::FIFO_KHR)
+            .unwrap_or(vk::PresentModeKHR::MAILBOX_KHR);
 
         let supported_device_extensions = unsafe {
             instance

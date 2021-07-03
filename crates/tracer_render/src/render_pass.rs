@@ -1,13 +1,13 @@
 use erupt::vk;
 use smallvec::SmallVec;
 
-pub const RENDERPASS_SMALLVEC_ATTACHMENTS: usize = 8;
-pub const SMALLVEC_SUBPASSES: usize = 4;
+pub const DEFAULT_ATTACHMENT_COUNT: usize = 4;
+pub const DEFAULT_SUBPASS_COUNT: usize = 1;
 
 #[derive(Clone)]
 pub struct RenderPassInfo {
-    pub attachments: SmallVec<[AttachmentInfo; RENDERPASS_SMALLVEC_ATTACHMENTS]>,
-    pub subpasses: SmallVec<[Subpass; SMALLVEC_SUBPASSES]>,
+    pub attachments: SmallVec<[AttachmentInfo; DEFAULT_ATTACHMENT_COUNT]>,
+    pub subpasses: SmallVec<[Subpass; DEFAULT_SUBPASS_COUNT]>,
 }
 
 #[derive(Clone)]
@@ -22,7 +22,7 @@ pub struct AttachmentInfo {
 
 #[derive(Clone)]
 pub struct Subpass {
-    pub colors: SmallVec<[usize; RENDERPASS_SMALLVEC_ATTACHMENTS]>,
+    pub colors: SmallVec<[usize; DEFAULT_ATTACHMENT_COUNT]>,
     pub depth: Option<usize>,
 }
 

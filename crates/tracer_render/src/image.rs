@@ -5,9 +5,9 @@ use std::ops::Range;
 pub struct ImageInfo {
     pub extent: vk::Extent2D,
     pub format: vk::Format,
-    pub levels: u32,
-    pub layers: u32,
-    pub samples: vk::SampleCountFlags,
+    pub mip_levels: u32,
+    pub array_layers: u32,
+    pub samples: vk::SampleCountFlagBits,
     pub usage: vk::ImageUsageFlags,
 }
 
@@ -79,8 +79,8 @@ impl ImageViewInfo {
             view_type: vk::ImageViewType::_2D,
             subresource: ImageSubresourceRange::new(
                 image_aspect_flags,
-                0..info.layers,
-                0..info.layers,
+                0..info.array_layers,
+                0..info.array_layers,
             ),
             image,
         }
