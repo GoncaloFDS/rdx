@@ -1,16 +1,16 @@
+pub use self::pass::*;
+
 use crate::debug::DebugMessenger;
 use crate::instance;
 use crate::physical_device::PhysicalDevice;
+use crate::pipeline::{Pipeline, RasterPipeline};
 use crate::render_context::RenderContext;
 use crate::surface::Surface;
 use crate::swapchain::Swapchain;
 use erupt::{vk, EntryLoader, InstanceLoader};
+use parking_lot::Mutex;
 use std::sync::Arc;
 use winit::window::Window;
-
-pub use self::pass::*;
-use crate::pipeline::{Pipeline, RasterPipeline};
-use parking_lot::Mutex;
 
 mod pass;
 

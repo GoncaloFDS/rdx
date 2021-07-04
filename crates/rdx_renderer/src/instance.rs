@@ -5,7 +5,7 @@ use std::ffi::CString;
 use winit::window::Window;
 
 pub fn create_instance(window: &Window, entry: &EntryLoader) -> InstanceLoader {
-    let app_name = CString::new("Tracer").unwrap();
+    let app_name = CString::new("RDX").unwrap();
     let engine_name = CString::new("Vulkan Engine").unwrap();
     let app_info = vk::ApplicationInfoBuilder::new()
         .api_version(vk::make_api_version(1, 2, 0, 0))

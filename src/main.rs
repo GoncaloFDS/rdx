@@ -22,6 +22,6 @@ fn main() {
         .add_plugin(bevy::winit::WinitPlugin::default())
         .add_plugin(bevy::asset::AssetPlugin::default())
         .add_plugin(bevy::scene::ScenePlugin::default())
-        .add_plugin(tracer_render::RenderPlugin::default())
+        .add_plugin(rdx_renderer::RenderPlugin::default())
         .run()
 }
