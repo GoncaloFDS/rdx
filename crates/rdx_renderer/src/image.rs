@@ -1,4 +1,6 @@
+use crate::util::ToErupt;
 use erupt::vk;
+use erupt::vk1_0::Format;
 use gpu_alloc::MemoryBlock;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
@@ -24,16 +26,34 @@ pub struct ImageSubresourceRange {
 
 impl ImageSubresourceRange {
     pub fn new(aspect: vk::ImageAspectFlags, levels: Range<u32>, layers: Range<u32>) -> Self {
-        assert!(levels.end >= levels.start);
-
-        assert!(layers.end >= layers.start);
-
         ImageSubresourceRange {
             aspect,
             first_level: levels.start,
             level_count: levels.end - levels.start,
             first_layer: layers.start,
             layer_count: layers.end - layers.start,
+        }
+    }
+
+    pub fn whole(info: &ImageInfo, aspect: vk::ImageAspectFlags) -> Self {
+        ImageSubresourceRange {
+            aspect,
+            first_level: 0,
+            level_count: info.mip_levels,
+            first_layer: 0,
+            layer_count: info.array_layers,
+        }
+    }
+}
+
+impl ToErupt<vk::ImageSubresourceRange> for ImageSubresourceRange {
+    fn to_erupt(&self) -> vk::ImageSubresourceRange {
+        vk::ImageSubresourceRange {
+            aspect_mask: self.aspect,
+            base_mip_level: self.first_level,
+            level_count: self.level_count,
+            base_array_layer: self.first_layer,
+            layer_count: self.layer_count,
         }
     }
 }
@@ -47,8 +67,6 @@ pub struct ImageSubresourceLayers {
 
 impl ImageSubresourceLayers {
     pub fn new(aspect: vk::ImageAspectFlags, level: u32, layers: Range<u32>) -> Self {
-        assert!(layers.end >= layers.start);
-
         ImageSubresourceLayers {
             aspect,
             level,
@@ -64,6 +82,28 @@ pub struct ImageMemoryBarrier<'a> {
     pub new_layout: vk::ImageLayout,
     pub family_transfer: Option<Range<u32>>,
     pub subresource: ImageSubresourceRange,
+}
+
+impl<'a> ImageMemoryBarrier<'a> {
+    pub fn transition_whole(image: &'a Image, layouts: Range<vk::ImageLayout>) -> Self {
+        ImageMemoryBarrier {
+            subresource: ImageSubresourceRange::whole(image.info(), vk::ImageAspectFlags::COLOR),
+            image,
+            old_layout: Some(layouts.start),
+            new_layout: layouts.end,
+            family_transfer: None,
+        }
+    }
+
+    pub fn initialize_whole(image: &'a Image, layout: vk::ImageLayout) -> Self {
+        ImageMemoryBarrier {
+            subresource: ImageSubresourceRange::whole(image.info(), vk::ImageAspectFlags::COLOR),
+            image,
+            old_layout: None,
+            new_layout: layout,
+            family_transfer: None,
+        }
+    }
 }
 
 #[derive(Clone)]

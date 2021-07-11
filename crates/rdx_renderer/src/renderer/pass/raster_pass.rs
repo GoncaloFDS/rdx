@@ -8,7 +8,8 @@ use crate::renderer::Pass;
 use crate::resources::{
     Fence, Framebuffer, GraphicsPipeline, PipelineLayout, RenderPass, Semaphore,
 };
-use crate::shader::{Shader, ShaderLanguage, ShaderModuleInfo};
+use crate::shader::{Shader, ShaderModuleInfo};
+use bumpalo::Bump;
 use erupt::vk;
 use erupt::vk1_0::{Extent2D, Format, PipelineStageFlags};
 use lru::LruCache;
@@ -45,7 +46,8 @@ impl Pass<'_> for RasterPass {
         signal: &[Semaphore],
         fence: Option<&Fence>,
         render_context: &mut RenderContext,
-    ) -> Output {
+        bump: &Bump,
+    ) -> Self::Output {
         let fb;
         let framebuffer = match self.framebuffers.get(&input.target) {
             None => {
@@ -102,9 +104,11 @@ impl Pass<'_> for RasterPass {
 
         encoder.end_render_pass();
 
+        let command_buffer = encoder.finish(&render_context.device);
+
         render_context
             .queue
-            .submit(wait, encoder.finish(&render_context.device), signal, fence);
+            .submit(command_buffer, wait, signal, fence);
 
         Output
     }
@@ -116,21 +120,15 @@ impl RasterPass {
         surface_format: vk::Format,
         extent: vk::Extent2D,
     ) -> Self {
-        let vertex_shader = {
-            let module = render_context.create_shader_module(ShaderModuleInfo::new(
-                "shader.vert.spv",
-                ShaderLanguage::SPIRV,
-            ));
-            Shader::new(module, vk::ShaderStageFlags::VERTEX)
-        };
+        let vertex_shader = Shader::new(
+            render_context.create_shader_module(ShaderModuleInfo::new("shader.vert.spv")),
+            vk::ShaderStageFlagBits::VERTEX,
+        );
 
-        let fragment_shader = {
-            let module = render_context.create_shader_module(ShaderModuleInfo::new(
-                "shader.frag.spv",
-                ShaderLanguage::SPIRV,
-            ));
-            Shader::new(module, vk::ShaderStageFlags::FRAGMENT)
-        };
+        let fragment_shader = Shader::new(
+            render_context.create_shader_module(ShaderModuleInfo::new("shader.frag.spv")),
+            vk::ShaderStageFlagBits::FRAGMENT,
+        );
 
         let depth_image = render_context.create_image(ImageInfo {
             extent,

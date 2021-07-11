@@ -2,6 +2,7 @@ use crate::image::ImageView;
 use crate::resources::{
     AccelerationStructure, Buffer, DescriptorSet, DescriptorSetLayout, Sampler,
 };
+use crate::util::ToErupt;
 use erupt::vk;
 use std::ops::Deref;
 
@@ -13,7 +14,7 @@ pub struct DescriptorSetInfo {
 }
 
 pub struct WriteDescriptorSet<'a> {
-    pub set: &'a DescriptorSet,
+    pub descriptor_set: &'a DescriptorSet,
     pub binding: u32,
     pub element: u32,
     pub descriptors: Descriptors<'a>,
@@ -51,15 +52,48 @@ pub struct DescriptorSetLayoutInfo {
 #[derive(Clone)]
 pub struct DescriptorSetLayoutBinding {
     pub binding: u32,
-    pub descriptor_type: vk::DescriptorType,
+    pub descriptor_type: DescriptorType,
     pub count: u32,
     pub stages: vk::ShaderStageFlags,
     pub flags: vk::DescriptorBindingFlags,
 }
 
-fn descriptor_type_from_index(index: usize) -> vk::DescriptorType {
-    debug_assert!(index < DESCRIPTOR_TYPES_COUNT);
+#[derive(Copy, Clone)]
+pub enum DescriptorType {
+    Sampler,
+    CombinedImageSampler,
+    SampledImage,
+    StorageImage,
+    UniformTexelBuffer,
+    StorageTexelBuffer,
+    UniformBuffer,
+    StorageBuffer,
+    UniformBufferDynamic,
+    StorageBufferDynamic,
+    InputAttachment,
+    AccelerationStructure,
+}
 
+impl ToErupt<vk::DescriptorType> for DescriptorType {
+    fn to_erupt(&self) -> vk::DescriptorType {
+        match self {
+            Self::Sampler => vk::DescriptorType::SAMPLER,
+            Self::CombinedImageSampler => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            Self::SampledImage => vk::DescriptorType::SAMPLED_IMAGE,
+            Self::StorageImage => vk::DescriptorType::STORAGE_IMAGE,
+            Self::UniformTexelBuffer => vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
+            Self::StorageTexelBuffer => vk::DescriptorType::STORAGE_TEXEL_BUFFER,
+            Self::UniformBuffer => vk::DescriptorType::UNIFORM_BUFFER,
+            Self::StorageBuffer => vk::DescriptorType::STORAGE_BUFFER,
+            Self::UniformBufferDynamic => vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+            Self::StorageBufferDynamic => vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
+            Self::InputAttachment => vk::DescriptorType::INPUT_ATTACHMENT,
+            Self::AccelerationStructure => vk::DescriptorType::ACCELERATION_STRUCTURE_KHR,
+        }
+    }
+}
+
+fn descriptor_type_from_index(index: usize) -> vk::DescriptorType {
     match index {
         0 => vk::DescriptorType::SAMPLER,
         1 => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -90,7 +124,7 @@ impl DescriptorSizesBuilder {
     }
 
     pub fn add_binding(&mut self, binding: &DescriptorSetLayoutBinding) {
-        self.sizes[binding.descriptor_type.0 as usize] += binding.count;
+        self.sizes[binding.descriptor_type as usize] += binding.count;
     }
 
     pub fn from_bindings(bindings: &[DescriptorSetLayoutBinding]) -> Self {
@@ -108,7 +142,7 @@ impl DescriptorSizesBuilder {
             ._type(vk::DescriptorType::SAMPLER)
             .descriptor_count(0); DESCRIPTOR_TYPES_COUNT];
 
-        let mut count = 0u8;
+        let mut count = 0;
 
         for (i, size) in self.sizes.iter().copied().enumerate() {
             if size > 0 {

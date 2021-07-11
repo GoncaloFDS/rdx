@@ -2,9 +2,10 @@ use crate::image::Image;
 use crate::pipeline::Pipeline;
 use crate::render_context::RenderContext;
 use crate::renderer::{raster_pass, Pass, RasterPass};
-use crate::resources::{Fence, Semaphore};
+use crate::resources::{AccelerationStructure, Fence, Semaphore};
+use bumpalo::Bump;
 use erupt::vk;
-use erupt::vk1_0::{Extent2D, Format};
+use std::collections::HashMap;
 
 pub struct RasterPipeline {
     raster_pass: RasterPass,
@@ -29,10 +30,12 @@ impl RasterPipeline {
 impl Pipeline for RasterPipeline {
     fn draw(
         &mut self,
+        render_context: &mut RenderContext,
         target: Image,
         target_wait: &Semaphore,
         target_signal: &Semaphore,
-        render_context: &mut RenderContext,
+        _blases: &HashMap<u8, AccelerationStructure>,
+        bump: &Bump,
     ) {
         let fence = &self.fences[(self.frame % 2) as usize];
         if self.frame > 1 {
@@ -51,6 +54,7 @@ impl Pipeline for RasterPipeline {
             &[target_signal.clone()],
             Some(fence),
             render_context,
+            bump,
         );
 
         self.frame += 1;

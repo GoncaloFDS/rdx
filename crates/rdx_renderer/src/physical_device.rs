@@ -6,11 +6,13 @@ use erupt::{vk, DeviceLoader, ExtendableFromConst, ExtendableFromMut, InstanceLo
 use std::ffi::CStr;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct PhysicalDevice {
     info: PhysicalDeviceInfo,
     handle: vk::PhysicalDevice,
 }
 
+#[derive(Clone)]
 pub struct PhysicalDeviceInfo {
     pub queue_index: u32,
     pub surface_format: vk::SurfaceFormatKHR,
@@ -164,6 +166,10 @@ impl PhysicalDevice {
         &self.info
     }
 
+    pub fn handle(&self) -> vk::PhysicalDevice {
+        self.handle
+    }
+
     pub fn create_device(
         &self,
         instance: Arc<InstanceLoader>,
@@ -206,7 +212,7 @@ impl PhysicalDevice {
 
         let device =
             unsafe { DeviceLoader::new(&instance, self.handle, &device_info, None).unwrap() };
-        let device = Device::new(instance.clone(), device, self.handle);
+        let device = Device::new(instance.clone(), device, self.clone());
 
         let queue = unsafe { device.handle().get_device_queue(self.info.queue_index, 0) };
         let queue = Queue::new(queue, device.clone(), self.info.queue_index);

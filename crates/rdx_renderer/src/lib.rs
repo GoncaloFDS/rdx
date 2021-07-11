@@ -1,3 +1,5 @@
+extern crate bumpalo;
+
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::window::{WindowCreated, WindowResized};

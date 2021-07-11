@@ -65,3 +65,11 @@ where
 pub fn align_down(align_mask: u64, value: u64) -> u64 {
     value & !align_mask
 }
+
+pub trait ToErupt<T> {
+    fn to_erupt(&self) -> T;
+}
+
+pub trait FromErupt<T> {
+    fn from_erupt(value: T) -> Self;
+}

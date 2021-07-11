@@ -1,31 +1,46 @@
-use crate::buffer::BufferInfo;
-use crate::descriptor::{DescriptorSetInfo, DescriptorSetLayoutInfo, DescriptorSizes};
+use crate::acceleration_structures::{
+    AccelerationStructureBuildSizesInfo, AccelerationStructureGeometryInfo,
+    AccelerationStructureInfo, AccelerationStructureLevel,
+};
+use crate::buffer::{BufferInfo, BufferRegion, DeviceAddress};
+use crate::descriptor::{
+    CopyDescriptorSet, DescriptorSetInfo, DescriptorSetLayoutInfo, DescriptorSizes, Descriptors,
+    WriteDescriptorSet,
+};
 use crate::framebuffer::FramebufferInfo;
 use crate::image::{Image, ImageInfo, ImageView, ImageViewInfo};
-use crate::pipeline::{GraphicsPipelineInfo, PipelineLayoutInfo};
+use crate::physical_device::PhysicalDevice;
+use crate::pipeline::{
+    GraphicsPipelineInfo, PipelineLayoutInfo, RayTracingPipelineInfo, RayTracingShaderGroupInfo,
+    ShaderBindingTable, ShaderBindingTableInfo,
+};
 use crate::render_pass::RenderPassInfo;
 use crate::resources::{
-    Buffer, DescriptorSet, DescriptorSetLayout, Fence, Framebuffer, GraphicsPipeline,
-    MappableBuffer, PipelineLayout, RenderPass, Semaphore, ShaderModule,
+    AccelerationStructure, Buffer, DescriptorSet, DescriptorSetLayout, Fence, Framebuffer,
+    GraphicsPipeline, PipelineLayout, RayTracingPipeline, RenderPass, Sampler, Semaphore,
+    ShaderModule,
 };
-use crate::shader::{ShaderLanguage, ShaderModuleInfo};
+use crate::shader::ShaderModuleInfo;
 use crate::surface::Surface;
 use crate::swapchain::Swapchain;
+use crate::util::{align_up, ToErupt};
+use crevice::internal::bytemuck;
 use crevice::internal::bytemuck::Pod;
-use erupt::vk1_0::ImageLayout;
-use erupt::{vk, DeviceLoader, InstanceLoader};
+use erupt::{vk, DeviceLoader, ExtendableFromConst, InstanceLoader};
 use gpu_alloc::{GpuAllocator, UsageFlags};
 use gpu_alloc_erupt::EruptMemoryDevice;
 use parking_lot::Mutex;
 use slab::Slab;
 use smallvec::SmallVec;
-use std::ffi::{CStr, CString};
+use std::convert::TryFrom;
+use std::ffi::CString;
+use std::ops::Range;
 use std::sync::Arc;
 
 pub struct DeviceInner {
     handle: DeviceLoader,
     instance: Arc<InstanceLoader>,
-    physical_device: vk::PhysicalDevice,
+    physical_device: PhysicalDevice,
     allocator: Mutex<GpuAllocator<vk::DeviceMemory>>,
     buffers: Mutex<Slab<vk::Buffer>>,
     swapchains: Mutex<Slab<vk::SwapchainKHR>>,
@@ -53,11 +68,13 @@ impl Device {
     pub fn new(
         instance: Arc<InstanceLoader>,
         device: DeviceLoader,
-        physical_device: vk::PhysicalDevice,
+        physical_device: PhysicalDevice,
     ) -> Self {
         let allocator = Mutex::new(GpuAllocator::new(
             gpu_alloc::Config::i_am_prototyping(),
-            unsafe { gpu_alloc_erupt::device_properties(&instance, physical_device).unwrap() },
+            unsafe {
+                gpu_alloc_erupt::device_properties(&instance, physical_device.handle()).unwrap()
+            },
         ));
         Device {
             inner: Arc::new(DeviceInner {
@@ -172,7 +189,7 @@ impl Device {
         &self.inner.allocator
     }
 
-    pub fn create_buffer(&self, info: BufferInfo, allocation_flags: UsageFlags) -> MappableBuffer {
+    pub fn create_buffer(&self, info: BufferInfo) -> Buffer {
         let buffer = unsafe {
             self.inner
                 .handle
@@ -193,11 +210,11 @@ impl Device {
                 .allocator
                 .lock()
                 .alloc(
-                    EruptMemoryDevice::wrap(&self.inner.handle),
+                    EruptMemoryDevice::wrap(self.handle()),
                     gpu_alloc::Request {
                         size: mem_requirements.size,
                         align_mask: (mem_requirements.alignment - 1) | info.align,
-                        usage: allocation_flags,
+                        usage: info.allocation_flags,
                         memory_types: mem_requirements.memory_type_bits,
                     },
                 )
@@ -211,21 +228,22 @@ impl Device {
                 .unwrap()
         }
 
-        let device_address = if allocation_flags.contains(UsageFlags::DEVICE_ADDRESS) {
+        let device_address = if info.allocation_flags.contains(UsageFlags::DEVICE_ADDRESS) {
             let device_address = unsafe {
                 self.inner.handle.get_buffer_device_address(
                     &vk::BufferDeviceAddressInfoBuilder::new().buffer(buffer),
                 )
             };
-            Some(device_address)
+            Some(DeviceAddress::new(device_address))
         } else {
             None
         };
 
         let buffer_index = self.inner.buffers.lock().insert(buffer);
+        let allocation_flags = info.allocation_flags;
 
         tracing::debug!("Created Buffer {:p}", buffer);
-        MappableBuffer::new(
+        Buffer::new(
             info,
             buffer,
             device_address,
@@ -239,13 +257,13 @@ impl Device {
     where
         T: Pod,
     {
-        let mut buffer = self.create_buffer(info, UsageFlags::UPLOAD);
+        let mut buffer = self.create_buffer(info);
 
         unsafe {
             let ptr = buffer
                 .memory_block()
                 .map(
-                    EruptMemoryDevice::wrap(&self.inner.handle),
+                    EruptMemoryDevice::wrap(self.handle()),
                     0,
                     std::mem::size_of_val(data),
                 )
@@ -259,9 +277,25 @@ impl Device {
 
             buffer
                 .memory_block()
-                .unmap(EruptMemoryDevice::wrap(&self.inner.handle));
+                .unmap(EruptMemoryDevice::wrap(self.handle()));
         }
         buffer.into()
+    }
+
+    pub fn write_buffer<T>(&self, buffer: &mut Buffer, offset: u64, data: &[T])
+    where
+        T: Pod,
+    {
+        unsafe {
+            buffer
+                .memory_block()
+                .write_bytes(
+                    EruptMemoryDevice::wrap(self.handle()),
+                    offset,
+                    bytemuck::cast_slice(data),
+                )
+                .unwrap();
+        }
     }
 
     pub fn create_swapchain(&self, surface: &Surface) -> Swapchain {
@@ -333,7 +367,7 @@ impl Device {
                                     vk::DescriptorSetLayoutBindingBuilder::new()
                                         .binding(binding.binding)
                                         .descriptor_count(binding.count)
-                                        .descriptor_type(binding.descriptor_type)
+                                        .descriptor_type(binding.descriptor_type.to_erupt())
                                         .stage_flags(binding.stages)
                                 })
                                 .collect::<SmallVec<[_; 16]>>(),
@@ -390,6 +424,108 @@ impl Device {
         DescriptorSet::new(info, handles[0], pool)
     }
 
+    pub fn update_descriptor_sets<'a>(
+        &self,
+        writes: &[WriteDescriptorSet<'a>],
+        copies: &[CopyDescriptorSet<'a>],
+    ) {
+        debug_assert!(copies.is_empty());
+
+        let mut ranges = SmallVec::<[_; 64]>::new();
+        let mut images = SmallVec::<[_; 16]>::new();
+        let mut acceleration_structures = SmallVec::<[_; 64]>::new();
+        let mut write_descriptor_acceleration_structures = SmallVec::<[_; 16]>::new();
+
+        for write in writes {
+            match write.descriptors {
+                Descriptors::Sampler(_) => unimplemented!(),
+                Descriptors::CombinedImageSampler(slice) => {
+                    let start = images.len();
+                    images.extend(slice.iter().map(|(image_view, image_layout, sampler)| {
+                        vk::DescriptorImageInfoBuilder::new()
+                            .sampler(sampler.handle())
+                            .image_view(image_view.handle())
+                            .image_layout(*image_layout)
+                    }));
+                    ranges.push(start..images.len());
+                }
+                Descriptors::SampledImage(_) => unimplemented!(),
+                Descriptors::StorageImage(slice) => {
+                    let start = images.len();
+                    images.extend(slice.iter().map(|(image_view, image_layout)| {
+                        vk::DescriptorImageInfoBuilder::new()
+                            .image_view(image_view.handle())
+                            .image_layout(*image_layout)
+                    }));
+                    ranges.push(start..images.len());
+                }
+                Descriptors::UniformBuffer(_) => unimplemented!(),
+                Descriptors::StorageBuffer(_) => unimplemented!(),
+                Descriptors::UniformBufferDynamic(_) => unimplemented!(),
+                Descriptors::StorageBufferDynamic(_) => unimplemented!(),
+                Descriptors::InputAttachment(_) => unimplemented!(),
+                Descriptors::AccelerationStructure(slice) => {
+                    let start = acceleration_structures.len();
+                    acceleration_structures.extend(
+                        slice
+                            .iter()
+                            .map(|acceleration_structure| acceleration_structure.handle()),
+                    );
+
+                    ranges.push(start..acceleration_structures.len());
+
+                    write_descriptor_acceleration_structures
+                        .push(vk::WriteDescriptorSetAccelerationStructureKHRBuilder::new())
+                }
+            }
+        }
+
+        let mut ranges = ranges.into_iter();
+        let mut write_descriptor_acceleration_structures =
+            write_descriptor_acceleration_structures.iter_mut();
+
+        let writes = writes
+            .iter()
+            .map(|write| {
+                let write_builder = vk::WriteDescriptorSetBuilder::new()
+                    .dst_set(write.descriptor_set.handle())
+                    .dst_binding(write.binding)
+                    .dst_array_element(write.element);
+
+                match write.descriptors {
+                    Descriptors::Sampler(_) => unimplemented!(),
+                    Descriptors::CombinedImageSampler(_) => write_builder
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(&images[ranges.next().unwrap()]),
+                    Descriptors::SampledImage(_) => unimplemented!(),
+                    Descriptors::StorageImage(_) => write_builder
+                        .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+                        .image_info(&images[ranges.next().unwrap()]),
+                    Descriptors::UniformBuffer(_) => unimplemented!(),
+                    Descriptors::StorageBuffer(_) => unimplemented!(),
+                    Descriptors::UniformBufferDynamic(_) => unimplemented!(),
+                    Descriptors::StorageBufferDynamic(_) => unimplemented!(),
+                    Descriptors::InputAttachment(_) => unimplemented!(),
+                    Descriptors::AccelerationStructure(_) => {
+                        let range = ranges.next().unwrap();
+                        let mut write_builder = write_builder
+                            .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR);
+                        write_builder.descriptor_count = range.len() as u32;
+
+                        let acc_structure_write =
+                            write_descriptor_acceleration_structures.next().unwrap();
+                        *acc_structure_write =
+                            vk::WriteDescriptorSetAccelerationStructureKHRBuilder::new()
+                                .acceleration_structures(&acceleration_structures[range.clone()]);
+                        write_builder.extend_from(&mut *acc_structure_write)
+                    }
+                }
+            })
+            .collect::<SmallVec<[_; 16]>>();
+
+        unsafe { self.handle().update_descriptor_sets(&writes, &[]) }
+    }
+
     pub fn create_pipeline_layout(&self, info: PipelineLayoutInfo) -> PipelineLayout {
         let pipeline_layout = unsafe {
             self.handle()
@@ -425,12 +561,7 @@ impl Device {
     }
 
     pub fn create_shader_module(&self, info: ShaderModuleInfo) -> ShaderModule {
-        let code = match info.language {
-            ShaderLanguage::GLSL => panic!("glsl is not supported"),
-            ShaderLanguage::SPIRV => &*info.code,
-        };
-
-        let spv = erupt::utils::decode_spv(&code).unwrap();
+        let spv = erupt::utils::decode_spv(&info.code).unwrap();
         let module = unsafe {
             self.handle()
                 .create_shader_module(&vk::ShaderModuleCreateInfoBuilder::new().code(&spv), None)
@@ -741,6 +872,35 @@ impl Device {
         ImageView::new(info, view)
     }
 
+    pub fn create_sampler(&self) -> Sampler {
+        let sampler = unsafe {
+            self.handle()
+                .create_sampler(
+                    &vk::SamplerCreateInfoBuilder::new()
+                        .mag_filter(vk::Filter::NEAREST)
+                        .min_filter(vk::Filter::NEAREST)
+                        .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                        .mip_lod_bias(0.0)
+                        .anisotropy_enable(false)
+                        .compare_enable(false)
+                        .compare_op(vk::CompareOp::NEVER)
+                        .min_lod(0.0)
+                        .max_lod(0.0)
+                        .border_color(vk::BorderColor::FLOAT_TRANSPARENT_BLACK)
+                        .unnormalized_coordinates(false),
+                    None,
+                )
+                .unwrap()
+        };
+
+        self.inner.samplers.lock().insert(sampler);
+
+        Sampler::new(sampler)
+    }
+
     pub fn create_framebuffer(&self, info: FramebufferInfo) -> Framebuffer {
         let render_pass = info.render_pass.handle();
 
@@ -768,6 +928,296 @@ impl Device {
 
         Framebuffer::new(info, framebuffer)
     }
+
+    pub fn create_ray_tracing_pipeline(&self, info: RayTracingPipelineInfo) -> RayTracingPipeline {
+        let shader_entry_name = CString::new("main").unwrap();
+        let stages = info
+            .shaders
+            .iter()
+            .map(|shader| {
+                vk::PipelineShaderStageCreateInfoBuilder::new()
+                    .stage(shader.stage)
+                    .module(shader.module.handle())
+                    .name(&shader_entry_name)
+            })
+            .collect::<Vec<_>>();
+
+        let groups = info
+            .groups
+            .iter()
+            .map(|group| {
+                let shader_group_info = vk::RayTracingShaderGroupCreateInfoKHRBuilder::new();
+                match *group {
+                    RayTracingShaderGroupInfo::Raygen { raygen } => shader_group_info
+                        ._type(vk::RayTracingShaderGroupTypeKHR::GENERAL_KHR)
+                        .general_shader(raygen)
+                        .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                        .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+                        .intersection_shader(vk::SHADER_UNUSED_KHR),
+                    RayTracingShaderGroupInfo::Miss { miss } => shader_group_info
+                        ._type(vk::RayTracingShaderGroupTypeKHR::GENERAL_KHR)
+                        .general_shader(miss)
+                        .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                        .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+                        .intersection_shader(vk::SHADER_UNUSED_KHR),
+                    RayTracingShaderGroupInfo::Triangle {
+                        any_hit,
+                        closest_hit,
+                    } => shader_group_info
+                        ._type(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP_KHR)
+                        .general_shader(vk::SHADER_UNUSED_KHR)
+                        .any_hit_shader(any_hit.unwrap_or(vk::SHADER_UNUSED_KHR))
+                        .closest_hit_shader(closest_hit.unwrap_or(vk::SHADER_UNUSED_KHR))
+                        .intersection_shader(vk::SHADER_UNUSED_KHR),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let pipeline = unsafe {
+            self.handle()
+                .create_ray_tracing_pipelines_khr(
+                    None,
+                    None,
+                    &[vk::RayTracingPipelineCreateInfoKHRBuilder::new()
+                        .stages(&stages)
+                        .groups(&groups)
+                        .max_pipeline_ray_recursion_depth(info.max_recursion_depth)
+                        .layout(info.layout.handle())],
+                    None,
+                )
+                .unwrap()[0]
+        };
+
+        let group_size = self
+            .inner
+            .physical_device
+            .info()
+            .raytracing_properties
+            .shader_group_handle_size as usize;
+
+        let total_size = group_size.checked_mul(info.groups.len()).unwrap();
+
+        let group_count = info.groups.len() as u32;
+
+        let mut bytes = vec![0u8; total_size];
+
+        unsafe {
+            self.handle()
+                .get_ray_tracing_shader_group_handles_khr(
+                    pipeline,
+                    0,
+                    group_count,
+                    bytes.len(),
+                    bytes.as_mut_ptr() as *mut _,
+                )
+                .unwrap();
+        }
+
+        self.inner.pipelines.lock().insert(pipeline);
+
+        RayTracingPipeline::new(info, pipeline, bytes.into())
+    }
+
+    pub fn create_shader_binding_table(
+        &self,
+        pipeline: &RayTracingPipeline,
+        info: ShaderBindingTableInfo,
+    ) -> ShaderBindingTable {
+        let rt_properties = self.inner.physical_device.info().raytracing_properties;
+
+        let group_size = rt_properties.shader_group_handle_size as u64;
+        let group_align = (rt_properties.shader_group_base_alignment - 1) as u64;
+
+        let group_count = (info.raygen.is_some() as usize
+            + info.miss.len()
+            + info.hit.len()
+            + info.callable.len()) as u32;
+
+        let group_stride = align_up(group_align, group_size).unwrap() as u64;
+
+        let total_size = group_stride.checked_mul(group_count as _).unwrap() as usize;
+
+        let mut bytes = vec![0; total_size];
+
+        let mut write_offset = 0;
+
+        let group_handlers = pipeline.group_handlers();
+
+        let raygen_handlers = copy_group_handlers(
+            group_handlers,
+            &mut bytes,
+            info.raygen.iter().copied(),
+            &mut write_offset,
+            group_size,
+            group_stride as usize,
+        );
+
+        let miss_handlers = copy_group_handlers(
+            group_handlers,
+            &mut bytes,
+            info.miss.iter().copied(),
+            &mut write_offset,
+            group_size,
+            group_stride as usize,
+        );
+
+        let hit_handlers = copy_group_handlers(
+            group_handlers,
+            &mut bytes,
+            info.hit.iter().copied(),
+            &mut write_offset,
+            group_size,
+            group_stride as usize,
+        );
+
+        let callable_handlers = copy_group_handlers(
+            group_handlers,
+            &mut bytes,
+            info.callable.iter().copied(),
+            &mut write_offset,
+            group_size,
+            group_stride as usize,
+        );
+
+        let sbt_buffer = self.create_buffer_with_data(
+            BufferInfo {
+                align: group_align,
+                size: total_size as _,
+                usage_flags: vk::BufferUsageFlags::SHADER_BINDING_TABLE_KHR
+                    | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                allocation_flags: gpu_alloc::UsageFlags::DEVICE_ADDRESS
+                    | gpu_alloc::UsageFlags::HOST_ACCESS,
+            },
+            &bytes,
+        );
+
+        ShaderBindingTable {
+            raygen: raygen_handlers.map(|range| BufferRegion {
+                buffer: sbt_buffer.clone(),
+                offset: range.start,
+                size: range.end - range.start,
+                stride: Some(group_stride),
+            }),
+            miss: miss_handlers.map(|range| BufferRegion {
+                buffer: sbt_buffer.clone(),
+                offset: range.start,
+                size: range.end - range.start,
+                stride: Some(group_stride),
+            }),
+            hit: hit_handlers.map(|range| BufferRegion {
+                buffer: sbt_buffer.clone(),
+                offset: range.start,
+                size: range.end - range.start,
+                stride: Some(group_stride),
+            }),
+            callable: callable_handlers.map(|range| BufferRegion {
+                buffer: sbt_buffer.clone(),
+                offset: range.start,
+                size: range.end - range.start,
+                stride: Some(group_stride),
+            }),
+        }
+    }
+
+    pub fn get_acceleration_structure_build_sizes(
+        &self,
+        level: AccelerationStructureLevel,
+        flags: vk::BuildAccelerationStructureFlagsKHR,
+        geometry: &[AccelerationStructureGeometryInfo],
+    ) -> AccelerationStructureBuildSizesInfo {
+        let geometries = geometry
+            .iter()
+            .map(|info| match *info {
+                AccelerationStructureGeometryInfo::Triangles {
+                    max_vertex_count,
+                    vertex_format,
+                    index_type,
+                    ..
+                } => vk::AccelerationStructureGeometryKHRBuilder::new()
+                    .geometry_type(vk::GeometryTypeKHR::TRIANGLES_KHR)
+                    .geometry(vk::AccelerationStructureGeometryDataKHR {
+                        triangles: vk::AccelerationStructureGeometryTrianglesDataKHRBuilder::new()
+                            .max_vertex(max_vertex_count)
+                            .vertex_format(vertex_format)
+                            .index_type(index_type)
+                            .build(),
+                    }),
+                AccelerationStructureGeometryInfo::Instances { .. } => {
+                    vk::AccelerationStructureGeometryKHRBuilder::new()
+                        .geometry_type(vk::GeometryTypeKHR::INSTANCES_KHR)
+                        .geometry(vk::AccelerationStructureGeometryDataKHR {
+                            instances: vk::AccelerationStructureGeometryInstancesDataKHR::default(),
+                        })
+                }
+            })
+            .collect::<SmallVec<[_; 4]>>();
+
+        let max_primitive_counts = geometry
+            .iter()
+            .map(|info| match *info {
+                AccelerationStructureGeometryInfo::Triangles {
+                    max_primitive_count,
+                    ..
+                } => max_primitive_count,
+                AccelerationStructureGeometryInfo::Instances {
+                    max_primitive_count,
+                    ..
+                } => max_primitive_count,
+            })
+            .collect::<SmallVec<[_; 4]>>();
+
+        let build_info = vk::AccelerationStructureBuildGeometryInfoKHRBuilder::new()
+            ._type(level.to_erupt())
+            .flags(flags)
+            .mode(vk::BuildAccelerationStructureModeKHR::BUILD_KHR)
+            .geometries(&geometries);
+
+        let build_sizes = unsafe {
+            self.handle().get_acceleration_structure_build_sizes_khr(
+                vk::AccelerationStructureBuildTypeKHR::DEVICE_KHR,
+                &build_info,
+                &max_primitive_counts,
+            )
+        };
+
+        AccelerationStructureBuildSizesInfo {
+            acceleration_structure_size: build_sizes.acceleration_structure_size,
+            update_scratch_size: build_sizes.update_scratch_size,
+            build_scratch_size: build_sizes.build_scratch_size,
+        }
+    }
+
+    pub fn create_acceleration_structure(
+        &self,
+        info: AccelerationStructureInfo,
+    ) -> AccelerationStructure {
+        let acceleration_structure = unsafe {
+            self.handle()
+                .create_acceleration_structure_khr(
+                    &vk::AccelerationStructureCreateInfoKHRBuilder::new()
+                        ._type(info.level.to_erupt())
+                        .offset(info.region.offset)
+                        .size(info.region.size)
+                        .buffer(info.region.buffer.handle()),
+                    None,
+                )
+                .unwrap()
+        };
+
+        self.inner
+            .acceleration_structures
+            .lock()
+            .insert(acceleration_structure);
+
+        let device_address = DeviceAddress::new(unsafe {
+            self.handle().get_acceleration_structure_device_address_khr(
+                &vk::AccelerationStructureDeviceAddressInfoKHRBuilder::new()
+                    .acceleration_structure(acceleration_structure),
+            )
+        });
+
+        AccelerationStructure::new(info, acceleration_structure, device_address)
+    }
 }
 
 fn get_allocator_memory_usage(usage: &vk::ImageUsageFlags) -> UsageFlags {
@@ -776,4 +1226,35 @@ fn get_allocator_memory_usage(usage: &vk::ImageUsageFlags) -> UsageFlags {
     } else {
         UsageFlags::empty()
     }
+}
+
+fn copy_group_handlers(
+    group_handlers: &[u8],
+    write: &mut [u8],
+    group_indices: impl IntoIterator<Item = u32>,
+    write_offset: &mut usize,
+    group_size: u64,
+    group_stride: usize,
+) -> Option<Range<u64>> {
+    let result_start = u64::try_from(*write_offset).ok()?;
+    let group_size_usize = usize::try_from(group_size).ok()?;
+
+    for group_index in group_indices {
+        let group_offset = (group_size_usize.checked_mul(usize::try_from(group_index).ok()?))?;
+
+        let group_end = group_offset.checked_add(group_size_usize)?;
+        let write_end = write_offset.checked_add(group_size_usize)?;
+
+        let group_range = group_offset..group_end;
+        let write_range = *write_offset..write_end;
+
+        let handler = &group_handlers[group_range];
+        let output = &mut write[write_range];
+
+        output.copy_from_slice(handler);
+        *write_offset = write_offset.checked_add(group_stride)?;
+    }
+
+    let result_end = u64::try_from(*write_offset).ok()?;
+    Some(result_start..result_end)
 }

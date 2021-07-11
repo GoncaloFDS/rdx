@@ -1,5 +1,6 @@
 use crate::buffer::{BufferRegion, DeviceAddress};
 use crate::resources::AccelerationStructure;
+use crate::util::ToErupt;
 use crevice::internal::bytemuck;
 use erupt::vk;
 use glam::Mat4;
@@ -23,12 +24,27 @@ pub enum AccelerationStructureLevel {
     Top,
 }
 
+impl ToErupt<vk::AccelerationStructureTypeKHR> for AccelerationStructureLevel {
+    fn to_erupt(&self) -> vk::AccelerationStructureTypeKHR {
+        match self {
+            AccelerationStructureLevel::Bottom => {
+                vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL_KHR
+            }
+            AccelerationStructureLevel::Top => vk::AccelerationStructureTypeKHR::TOP_LEVEL_KHR,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum AccelerationStructureGeometryInfo {
     Triangles {
         max_primitive_count: u32,
         max_vertex_count: u32,
         vertex_format: vk::Format,
+        index_type: vk::IndexType,
+    },
+    Instances {
+        max_primitive_count: u32,
     },
 }
 
@@ -53,6 +69,11 @@ pub enum AccelerationStructureGeometry {
         index_data: Option<DeviceAddress>,
         transform_data: Option<DeviceAddress>,
     },
+    Instances {
+        flags: vk::GeometryFlagsKHR,
+        data: DeviceAddress,
+        primitive_count: u32,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -65,3 +86,12 @@ pub struct AccelerationStructureInstance {
 
 unsafe impl bytemuck::Zeroable for AccelerationStructureInstance {}
 unsafe impl bytemuck::Pod for AccelerationStructureInstance {}
+
+impl AccelerationStructureInstance {
+    pub fn new(blas_address: DeviceAddress) -> Self {
+        AccelerationStructureInstance {
+            transform: Default::default(),
+            acceleration_structure_reference: blas_address,
+        }
+    }
+}

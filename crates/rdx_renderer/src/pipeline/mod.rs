@@ -1,23 +1,27 @@
 pub use self::graphics_pipeline::*;
 pub use self::raster_pipeline::*;
-pub use self::ray_tracing::*;
+pub use self::ray_tracing_pipeline::*;
 
 use crate::image::Image;
 use crate::render_context::RenderContext;
-use crate::resources::{DescriptorSetLayout, Semaphore};
+use crate::resources::{AccelerationStructure, DescriptorSetLayout, Semaphore};
+use bumpalo::Bump;
 use erupt::vk;
+use std::collections::HashMap;
 
 mod graphics_pipeline;
 mod raster_pipeline;
-mod ray_tracing;
+mod ray_tracing_pipeline;
 
 pub trait Pipeline {
     fn draw(
         &mut self,
+        render_context: &mut RenderContext,
         target: Image,
         target_wait: &Semaphore,
         target_signal: &Semaphore,
-        render_context: &mut RenderContext,
+        blases: &HashMap<u8, AccelerationStructure>,
+        bump: &Bump,
     );
 }
 

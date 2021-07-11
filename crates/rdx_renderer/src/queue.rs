@@ -58,9 +58,9 @@ impl Queue {
     }
 
     pub fn submit(
-        &mut self,
-        wait: &[(PipelineStageFlags, Semaphore)],
+        &self,
         command_buffer: CommandBuffer,
+        wait: &[(PipelineStageFlags, Semaphore)],
         signal: &[Semaphore],
         fence: Option<&Fence>,
     ) {

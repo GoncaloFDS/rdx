@@ -9,11 +9,11 @@ use std::path::Path;
 pub struct Shader {
     pub module: ShaderModule,
     pub entry: Box<str>,
-    pub stage: vk::ShaderStageFlags,
+    pub stage: vk::ShaderStageFlagBits,
 }
 
 impl Shader {
-    pub fn new(module: ShaderModule, stage: vk::ShaderStageFlags) -> Self {
+    pub fn new(module: ShaderModule, stage: vk::ShaderStageFlagBits) -> Self {
         Shader {
             module,
             entry: "main".into(),
@@ -25,11 +25,10 @@ impl Shader {
 #[derive(Clone)]
 pub struct ShaderModuleInfo {
     pub code: Box<[u8]>,
-    pub language: ShaderLanguage,
 }
 
 impl ShaderModuleInfo {
-    pub fn new(file: &str, language: ShaderLanguage) -> Self {
+    pub fn new(file: &str) -> Self {
         let path = env::current_dir()
             .unwrap()
             .join("assets")
@@ -41,15 +40,6 @@ impl ShaderModuleInfo {
         let mut bytes = Vec::new();
         shader_file.read_to_end(&mut bytes).unwrap();
 
-        ShaderModuleInfo {
-            code: bytes.into(),
-            language,
-        }
+        ShaderModuleInfo { code: bytes.into() }
     }
-}
-
-#[derive(Clone)]
-pub enum ShaderLanguage {
-    GLSL,
-    SPIRV,
 }

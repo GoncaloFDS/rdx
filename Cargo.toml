@@ -8,7 +8,3 @@ build = "build.rs"
 [dependencies]
 bevy = { version = "0.5" , default-features = false, features = ["bevy_winit"]}
 rdx_renderer = { path = "crates/rdx_renderer" }
-glam = { version = "0.16", features = ["transform-types"] }
-
-[build-dependencies]
-spirv-builder = { git = "https://github.com/EmbarkStudios/rust-gpu" }

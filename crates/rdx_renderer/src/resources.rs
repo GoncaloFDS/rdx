@@ -1,5 +1,5 @@
 use crate::acceleration_structures::AccelerationStructureInfo;
-use crate::buffer::BufferInfo;
+use crate::buffer::{BufferInfo, DeviceAddress};
 use crate::descriptor::{DescriptorSetInfo, DescriptorSetLayoutInfo, DescriptorSizes};
 use crate::framebuffer::FramebufferInfo;
 use crate::image::{ImageInfo, ImageViewInfo};
@@ -7,7 +7,6 @@ use crate::pipeline::{GraphicsPipelineInfo, PipelineLayoutInfo, RayTracingPipeli
 use crate::render_pass::RenderPassInfo;
 use crate::shader::ShaderModuleInfo;
 use erupt::vk;
-use erupt::vk::DeviceAddress;
 use gpu_alloc::{MemoryBlock, UsageFlags};
 use std::cell::UnsafeCell;
 use std::hash::{Hash, Hasher};
@@ -28,37 +27,10 @@ struct BufferInner {
 #[derive(Clone)]
 pub struct Buffer {
     inner: Arc<BufferInner>,
-}
-
-impl Buffer {
-    pub fn info(&self) -> &BufferInfo {
-        &self.inner.info
-    }
-}
-
-unsafe impl Send for Buffer {}
-unsafe impl Sync for Buffer {}
-
-pub struct MappableBuffer {
-    buffer: Buffer,
     allocation_flags: UsageFlags,
 }
 
-impl From<MappableBuffer> for Buffer {
-    fn from(buffer: MappableBuffer) -> Self {
-        buffer.buffer
-    }
-}
-
-impl Deref for MappableBuffer {
-    type Target = Buffer;
-
-    fn deref(&self) -> &Buffer {
-        &self.buffer
-    }
-}
-
-impl MappableBuffer {
+impl Buffer {
     pub fn new(
         info: BufferInfo,
         handle: vk::Buffer,
@@ -67,27 +39,40 @@ impl MappableBuffer {
         memory_block: MemoryBlock<vk::DeviceMemory>,
         allocation_flags: UsageFlags,
     ) -> Self {
-        MappableBuffer {
-            buffer: Buffer {
-                inner: Arc::new(BufferInner {
-                    info,
-                    handle,
-                    device_address,
-                    memory_handle: *memory_block.memory(),
-                    memory_offset: memory_block.offset(),
-                    memory_size: memory_block.size(),
-                    memory_block: UnsafeCell::new(memory_block),
-                    index,
-                }),
-            },
+        Buffer {
+            inner: Arc::new(BufferInner {
+                info,
+                handle,
+                device_address,
+                memory_handle: *memory_block.memory(),
+                memory_offset: memory_block.offset(),
+                memory_size: memory_block.size(),
+                memory_block: UnsafeCell::new(memory_block),
+                index,
+            }),
             allocation_flags,
         }
+    }
+
+    pub fn info(&self) -> &BufferInfo {
+        &self.inner.info
+    }
+
+    pub fn handle(&self) -> vk::Buffer {
+        self.inner.handle
+    }
+
+    pub fn device_address(&self) -> Option<DeviceAddress> {
+        self.inner.device_address
     }
 
     pub unsafe fn memory_block(&mut self) -> &mut MemoryBlock<vk::DeviceMemory> {
         &mut *self.inner.memory_block.get()
     }
 }
+
+unsafe impl Send for Buffer {}
+unsafe impl Sync for Buffer {}
 
 #[derive(Clone)]
 pub struct Fence {
@@ -141,6 +126,16 @@ impl RenderPass {
 #[derive(Clone)]
 pub struct Sampler {
     handle: vk::Sampler,
+}
+
+impl Sampler {
+    pub fn new(handle: vk::Sampler) -> Self {
+        Sampler { handle }
+    }
+
+    pub fn handle(&self) -> vk::Sampler {
+        self.handle
+    }
 }
 
 #[derive(Clone)]
@@ -231,6 +226,10 @@ impl DescriptorSet {
     ) -> Self {
         DescriptorSet { info, handle, pool }
     }
+
+    pub fn handle(&self) -> vk::DescriptorSet {
+        self.handle
+    }
 }
 
 #[derive(Clone)]
@@ -279,7 +278,33 @@ impl GraphicsPipeline {
 pub struct AccelerationStructure {
     info: AccelerationStructureInfo,
     handle: vk::AccelerationStructureKHR,
-    address: DeviceAddress,
+    device_address: DeviceAddress,
+}
+
+impl AccelerationStructure {
+    pub fn new(
+        info: AccelerationStructureInfo,
+        handle: vk::AccelerationStructureKHR,
+        device_address: DeviceAddress,
+    ) -> Self {
+        AccelerationStructure {
+            info,
+            handle,
+            device_address,
+        }
+    }
+
+    pub fn info(&self) -> &AccelerationStructureInfo {
+        &self.info
+    }
+
+    pub fn handle(&self) -> vk::AccelerationStructureKHR {
+        self.handle
+    }
+
+    pub fn device_address(&self) -> DeviceAddress {
+        self.device_address
+    }
 }
 
 #[derive(Clone)]
@@ -287,4 +312,30 @@ pub struct RayTracingPipeline {
     info: RayTracingPipelineInfo,
     handle: vk::Pipeline,
     group_handlers: Arc<[u8]>,
+}
+
+impl RayTracingPipeline {
+    pub fn new(
+        info: RayTracingPipelineInfo,
+        handle: vk::Pipeline,
+        group_handlers: Arc<[u8]>,
+    ) -> Self {
+        RayTracingPipeline {
+            info,
+            handle,
+            group_handlers,
+        }
+    }
+
+    pub fn info(&self) -> &RayTracingPipelineInfo {
+        &self.info
+    }
+
+    pub fn handle(&self) -> vk::Pipeline {
+        self.handle
+    }
+
+    pub fn group_handlers(&self) -> &[u8] {
+        &*self.group_handlers
+    }
 }

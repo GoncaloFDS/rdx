@@ -5,25 +5,27 @@ authors = ["Gonçalo Soares <goncalofds@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-bevy = { version = "0.5", default-features = false, features = ["bevy_winit"] }
-glam = { version = "0.17", features = ["transform-types"] }
-serde = { version = "1.0", features = ["derive"] }
+bevy = { version = "^0.5", default-features = false, features = ["bevy_winit"] }
+glam = { version = "^0.17", features = ["transform-types"] }
+serde = { version = "^1.0", features = ["derive"] }
 
 # Graphics
-erupt = "0.19"
-gpu-alloc-erupt = "0.5"
-gpu-alloc = "0.4"
+erupt = "^0.19"
+gpu-alloc-erupt = "^0.5"
+gpu-alloc = "^0.4"
 
-# Windowing
-winit = "0.24.0"
+# Windowing (needs to be the same version that bevy uses)
+winit = "^0.24"
 
 # Tracing
-tracing = "0.1"
+tracing = "^0.1"
 
-memoffset = "0.6"
-crevice = "0.6"
-slab = "0.4"
-parking_lot = "0.11"
-smallvec = "1.6"
-lru = "0.6"
-egui = "0.13"
+memoffset = "^0.6"
+crevice = "^0.6"
+slab = "^0.4"
+parking_lot = "^0.11"
+smallvec = "^1.6.1"
+lru = "^0.6"
+bumpalo = "^3.7"
+
+egui = "^0.13"

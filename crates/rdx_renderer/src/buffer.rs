@@ -1,5 +1,5 @@
 use crate::resources::Buffer;
-use crate::util::align_up;
+use crate::util::{align_up, ToErupt};
 use erupt::vk;
 use gpu_alloc::UsageFlags;
 use std::num::NonZeroU64;
@@ -46,8 +46,28 @@ impl BufferRegion {
 pub struct DeviceAddress(pub NonZeroU64);
 
 impl DeviceAddress {
+    pub fn new(address: u64) -> DeviceAddress {
+        NonZeroU64::new(address).map(DeviceAddress).unwrap()
+    }
+
     pub fn offset(&mut self, offset: u64) -> DeviceAddress {
         let value = self.0.get().checked_add(offset).unwrap();
         DeviceAddress(unsafe { NonZeroU64::new_unchecked(value) })
+    }
+}
+
+impl ToErupt<vk::DeviceOrHostAddressKHR> for DeviceAddress {
+    fn to_erupt(&self) -> vk::DeviceOrHostAddressKHR {
+        vk::DeviceOrHostAddressKHR {
+            device_address: self.0.get(),
+        }
+    }
+}
+
+impl ToErupt<vk::DeviceOrHostAddressConstKHR> for DeviceAddress {
+    fn to_erupt(&self) -> vk::DeviceOrHostAddressConstKHR {
+        vk::DeviceOrHostAddressConstKHR {
+            device_address: self.0.get(),
+        }
     }
 }

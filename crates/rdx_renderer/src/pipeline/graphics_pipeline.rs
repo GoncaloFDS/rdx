@@ -35,6 +35,5 @@ pub struct Rasterizer {
     pub front_face: vk::FrontFace,
     pub cull_mode: vk::CullModeFlags,
     pub polygon_mode: vk::PolygonMode,
-
     pub fragment_shader: Option<Shader>,
 }
